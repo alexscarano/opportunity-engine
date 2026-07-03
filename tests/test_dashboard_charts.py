@@ -16,6 +16,7 @@ from dashboard_charts import (
     build_events_overview,
     build_accuracy_chart,
     build_causal_line_chart,
+    build_investment_bar_chart,
 )
 
 
@@ -213,6 +214,18 @@ class TestBuildCausalLineChart(unittest.TestCase):
         self.assertEqual(list(inv_trace.y), [100, 200, 150])
         self.assertEqual(fig.layout.yaxis2.overlaying, "y")
         self.assertEqual(fig.layout.yaxis2.side, "right")
+
+
+class TestBuildInvestmentBarChart(unittest.TestCase):
+
+    def test_renames_periods_and_colors_bars(self):
+        inv_bar_df = pd.DataFrame({"Investment": [1000, 2000]}, index=["Pre-Event", "Event"])
+        inv_bar_df.index.name = "Period"
+
+        fig = build_investment_bar_chart(inv_bar_df)
+        self.assertEqual(list(fig.data[0].x), ["Pré-Evento", "Evento"])
+        self.assertEqual(list(fig.data[0].y), [1000, 2000])
+        self.assertEqual(list(fig.data[0].marker.color), ["gray", "green"])
 
 
 if __name__ == "__main__":

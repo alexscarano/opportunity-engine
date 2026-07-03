@@ -344,3 +344,25 @@ def build_causal_line_chart(line_df, kpi_name="kpi"):
         margin=dict(l=20, r=20, t=50, b=20),
     )
     return fig
+
+
+def build_investment_bar_chart(inv_bar_df):
+    """Pre-event vs event investment, 2-bar comparison."""
+    labels = {"Pre-Event": "Pré-Evento", "Event": "Evento"}
+    x_labels = [labels.get(idx, idx) for idx in inv_bar_df.index]
+    colors = ["gray" if idx == "Pre-Event" else "green" for idx in inv_bar_df.index]
+
+    fig = go.Figure(
+        go.Bar(
+            x=x_labels,
+            y=inv_bar_df["Investment"],
+            marker=dict(color=colors),
+        )
+    )
+    fig.update_layout(
+        title="Investimento: Pré-Evento vs. Evento",
+        yaxis_title="Investimento Total",
+        showlegend=False,
+        margin=dict(l=20, r=20, t=50, b=20),
+    )
+    return fig
