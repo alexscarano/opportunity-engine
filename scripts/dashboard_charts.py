@@ -80,6 +80,7 @@ def build_icpa_curve(
         yaxis_title=f"iCPA Marginal ({kpi_name})",
         xaxis=dict(tickformat=".2s"),
         hovermode="x unified",
+        hoverlabel=dict(namelength=-1),
         legend=dict(orientation="h", yanchor="top", y=1.15, xanchor="center", x=0.5),
         margin=dict(l=20, r=20, t=50, b=20),
     )
@@ -119,6 +120,7 @@ def build_revenue_roi_curve(df_plot, kpi_name="kpi"):
         yaxis2=dict(title="ROI Incremental", overlaying="y", side="right"),
         xaxis=dict(tickformat=".2s"),
         hovermode="x unified",
+        hoverlabel=dict(namelength=-1),
         legend=dict(orientation="h", yanchor="top", y=1.15, xanchor="center", x=0.5),
         margin=dict(l=20, r=20, t=50, b=20),
     )
@@ -174,6 +176,7 @@ def build_channel_mix_evolution(df_plot, baseline_monthly_inv=None, optimal_mont
         xaxis=dict(tickformat=".2s"),
         yaxis=dict(range=[0, 100]),
         hovermode="x unified",
+        hoverlabel=dict(namelength=-1),
         legend=dict(orientation="h", yanchor="top", y=1.2, xanchor="center", x=0.5),
         margin=dict(l=20, r=20, t=50, b=20),
     )
@@ -297,6 +300,7 @@ def build_accuracy_chart(accuracy_df, kpi_name="kpi"):
         title="Acurácia do Modelo: Real vs. Previsto (Período Pré-Evento)",
         yaxis_title=kpi_name,
         hovermode="x unified",
+        hoverlabel=dict(namelength=-1),
         legend=dict(orientation="h", yanchor="top", y=1.15, xanchor="center", x=0.5),
         margin=dict(l=20, r=20, t=50, b=20),
     )
@@ -340,6 +344,7 @@ def build_causal_line_chart(line_df, kpi_name="kpi"):
         yaxis=dict(title=kpi_name),
         yaxis2=dict(title="Investimento", overlaying="y", side="right", showgrid=False),
         hovermode="x unified",
+        hoverlabel=dict(namelength=-1),
         legend=dict(orientation="h", yanchor="top", y=1.15, xanchor="center", x=0.5),
         margin=dict(l=20, r=20, t=50, b=20),
     )
