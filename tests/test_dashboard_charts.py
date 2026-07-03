@@ -8,7 +8,12 @@ sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "scripts"))
 )
 
-from dashboard_charts import build_icpa_curve, build_revenue_roi_curve, build_channel_mix_evolution
+from dashboard_charts import (
+    build_icpa_curve,
+    build_revenue_roi_curve,
+    build_channel_mix_evolution,
+    build_channel_saturation_comparison,
+)
 
 
 class TestBuildIcpaCurve(unittest.TestCase):
@@ -109,6 +114,28 @@ class TestBuildChannelMixEvolution(unittest.TestCase):
             df_plot, baseline_monthly_inv=1000, optimal_monthly_inv=2000
         )
         self.assertEqual(len(fig.layout.shapes), 2)
+
+
+class TestBuildChannelSaturationComparison(unittest.TestCase):
+
+    def test_normalizes_each_channel_to_its_own_0_100_range(self):
+        individual_df = pd.DataFrame({
+            "Channel": ["GOOGLE", "GOOGLE", "META", "META"],
+            "Channel_Spend": [0, 100, 0, 50],
+            "Projected_Total_KPIs": [10, 20, 5, 5],
+        })
+        fig = build_channel_saturation_comparison(individual_df)
+
+        names = [trace.name for trace in fig.data]
+        self.assertEqual(names, ["GOOGLE", "META"])
+
+        google_trace = fig.data[names.index("GOOGLE")]
+        self.assertEqual(list(google_trace.x), [0, 100])
+        self.assertEqual(list(google_trace.y), [0.0, 100.0])
+
+        # META has a flat curve (min == max): normalization must not divide by zero
+        meta_trace = fig.data[names.index("META")]
+        self.assertEqual(list(meta_trace.y), [0.0, 0.0])
 
 
 if __name__ == "__main__":

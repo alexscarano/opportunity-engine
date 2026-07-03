@@ -178,3 +178,42 @@ def build_channel_mix_evolution(df_plot, baseline_monthly_inv=None, optimal_mont
         margin=dict(l=20, r=20, t=50, b=20),
     )
     return fig
+
+
+def build_channel_saturation_comparison(individual_df):
+    """Overlay of every channel's saturation curve, KPI normalized 0-100% per channel for shape comparison."""
+    fig = go.Figure()
+    palette = px.colors.qualitative.Plotly
+
+    channels = sorted(individual_df["Channel"].unique())
+    for i, channel in enumerate(channels):
+        channel_df = individual_df[individual_df["Channel"] == channel].sort_values(
+            "Channel_Spend"
+        )
+        y = channel_df["Projected_Total_KPIs"]
+        y_range = y.max() - y.min()
+        normalized = ((y - y.min()) / y_range * 100) if y_range > 0 else y * 0
+
+        fig.add_trace(
+            go.Scatter(
+                x=channel_df["Channel_Spend"],
+                y=normalized,
+                mode="lines",
+                name=channel,
+                line=dict(color=palette[i % len(palette)], width=2),
+                hovertemplate=(
+                    f"<b>{channel}</b><br>Investimento: R$ %{{x:.2s}}"
+                    "<br>Saturação: %{y:.0f}%<extra></extra>"
+                ),
+            )
+        )
+
+    fig.update_layout(
+        xaxis_title="Investimento Diário no Canal (R$)",
+        yaxis_title="% da Saturação Máxima do Canal",
+        xaxis=dict(tickformat=".2s"),
+        hovermode="closest",
+        legend=dict(orientation="h", yanchor="top", y=1.2, xanchor="center", x=0.5),
+        margin=dict(l=20, r=20, t=50, b=20),
+    )
+    return fig
