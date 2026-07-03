@@ -1620,6 +1620,12 @@ with tab3:
                 # --- NEW: Individual Curves Visualization ---
                 st.markdown("---")
                 st.markdown("### Curvas de Resposta Individuais por Canal")
+                st.markdown(
+                    "Simula a curva de resposta de um canal específico, mantendo os "
+                    "demais canais na média histórica de investimento. As linhas "
+                    "verticais marcam o investimento médio histórico e o investimento "
+                    "recomendado pela otimização."
+                )
 
                 ind_csv_path = os.path.join(
                     output_dir, "individual_response_curves_data.csv"

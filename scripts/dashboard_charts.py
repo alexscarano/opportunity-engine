@@ -411,7 +411,7 @@ def build_response_curve_individual(channel_df, channel_name):
         x=hist_spend,
         line_dash="dash",
         line_color="gray",
-        annotation_text=f"Historical Avg (R$ {hist_spend:,.2f})",
+        annotation_text=f"Média Histórica (R$ {hist_spend:,.2f})",
         annotation_position="top",
     )
 
@@ -421,14 +421,14 @@ def build_response_curve_individual(channel_df, channel_name):
             x=rec_spend,
             line_dash="dash",
             line_color="red",
-            annotation_text=f"Recommended (R$ {rec_spend:,.2f})",
+            annotation_text=f"Recomendado (R$ {rec_spend:,.2f})",
             annotation_position="bottom",
         )
 
     fig.update_layout(
-        title=f"Response Curve: {channel_name}",
-        xaxis_title="Daily Investment",
-        yaxis_title="Projected Total Daily KPIs",
+        title=f"Curva de Resposta: {channel_name}",
+        xaxis_title="Investimento Diário",
+        yaxis_title="Total Projetado de KPIs Diários",
         margin=dict(l=20, r=20, t=50, b=20),
     )
     return fig
