@@ -256,3 +256,48 @@ def build_events_overview(events_df, validated_keys):
         showlegend=False,
     )
     return fig
+
+
+def build_accuracy_chart(accuracy_df, kpi_name="kpi"):
+    """Real vs Predicted (in-sample) KPI line chart, with MAE shown as an annotation."""
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=accuracy_df["Date"],
+            y=accuracy_df["kpi"],
+            mode="lines",
+            name=f"{kpi_name} Real",
+            line=dict(color="black", width=2),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=accuracy_df["Date"],
+            y=accuracy_df["Predicted"],
+            mode="lines",
+            name=f"{kpi_name} Previsto (In-Sample)",
+            line=dict(color="red", width=2, dash="dash"),
+        )
+    )
+
+    mae = accuracy_df["mae"].iloc[0] if "mae" in accuracy_df.columns and not accuracy_df.empty else 0
+    fig.add_annotation(
+        text=f"MAE (últimos 90 dias): {mae:.2f}",
+        xref="paper",
+        yref="paper",
+        x=0.02,
+        y=0.98,
+        showarrow=False,
+        bgcolor="wheat",
+        opacity=0.8,
+        align="left",
+    )
+
+    fig.update_layout(
+        title="Acurácia do Modelo: Real vs. Previsto (Período Pré-Evento)",
+        yaxis_title=kpi_name,
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="top", y=1.15, xanchor="center", x=0.5),
+        margin=dict(l=20, r=20, t=50, b=20),
+    )
+    return fig

@@ -14,6 +14,7 @@ from dashboard_charts import (
     build_channel_mix_evolution,
     build_channel_saturation_comparison,
     build_events_overview,
+    build_accuracy_chart,
 )
 
 
@@ -155,6 +156,33 @@ class TestBuildEventsOverview(unittest.TestCase):
         self.assertEqual(list(fig.data[0].y), [150.0, -80.0])
         self.assertEqual(tuple(fig.data[0].marker.color), ("#2ca02c", "#d62728"))
         self.assertEqual(tuple(fig.data[0].marker.opacity), (1.0, 0.35))
+
+
+class TestBuildAccuracyChart(unittest.TestCase):
+
+    def setUp(self):
+        self.accuracy_df = pd.DataFrame({
+            "Date": pd.date_range(start="2026-01-01", periods=3),
+            "kpi": [10, 20, 15],
+            "Predicted": [12, 18, 14],
+            "mae": [1.5, 1.5, 1.5],
+        })
+
+    def test_plots_real_and_predicted_lines(self):
+        fig = build_accuracy_chart(self.accuracy_df, kpi_name="Vendas")
+        names = [trace.name for trace in fig.data]
+        self.assertIn("Vendas Real", names)
+        self.assertIn("Vendas Previsto (In-Sample)", names)
+
+        real_trace = fig.data[names.index("Vendas Real")]
+        self.assertEqual(list(real_trace.y), [10, 20, 15])
+        pred_trace = fig.data[names.index("Vendas Previsto (In-Sample)")]
+        self.assertEqual(list(pred_trace.y), [12, 18, 14])
+
+    def test_shows_mae_annotation(self):
+        fig = build_accuracy_chart(self.accuracy_df)
+        self.assertEqual(len(fig.layout.annotations), 1)
+        self.assertIn("1.50", fig.layout.annotations[0].text)
 
 
 if __name__ == "__main__":
