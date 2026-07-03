@@ -225,6 +225,17 @@ def save_sessions_bar_plot(sessions_bar_df, output_path, kpi_name="kpi"):
     plt.close(fig)
 
 
+def save_causal_chart_data(event_output_dir, line_df, inv_bar_df, sessions_bar_df, accuracy_df, mae):
+    """Persists the raw dataframes behind the causal charts so Streamlit can render them as Plotly."""
+    line_df.to_csv(os.path.join(event_output_dir, "line_chart_data.csv"), index=False)
+    inv_bar_df.to_csv(os.path.join(event_output_dir, "investment_data.csv"))
+    sessions_bar_df.to_csv(os.path.join(event_output_dir, "sessions_data.csv"))
+
+    accuracy_out = accuracy_df.copy()
+    accuracy_out["mae"] = mae
+    accuracy_out.to_csv(os.path.join(event_output_dir, "accuracy_data.csv"), index=False)
+
+
 def save_opportunity_curve_plot(
     response_curve_df,
     baseline_point,

@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 import os
 import sys
+import tempfile
 import pandas as pd
 
 # Ensure scripts directory is in path
@@ -17,6 +18,7 @@ from presentation import (
     save_line_chart_plot,
     save_investment_bar_plot,
     save_sessions_bar_plot,
+    save_causal_chart_data,
 )
 
 
@@ -178,6 +180,50 @@ class TestPresentationChartsTranslation(unittest.TestCase):
             )
             # Ylabel
             mock_set_ylabel.assert_called_once_with("Total de Cliques", fontsize=12)
+
+
+class TestSaveCausalChartData(unittest.TestCase):
+    def test_persists_all_four_dataframes_with_mae_column(self):
+        line_df = pd.DataFrame(
+            {
+                "Date": pd.date_range(start="2026-01-01", periods=3),
+                "Actual_KPI": [10, 20, 15],
+                "Forecasted_KPI": [12, 18, 14],
+                "Investment": [100, 200, 150],
+            }
+        )
+        inv_bar_df = pd.DataFrame({"Investment": [1000, 2000]}, index=["Pre-Event", "Event"])
+        inv_bar_df.index.name = "Period"
+        sessions_bar_df = pd.DataFrame({"kpi": [50, 60]}, index=["Forecasted", "Actual"])
+        sessions_bar_df.index.name = "Category"
+        accuracy_df = pd.DataFrame(
+            {
+                "Date": pd.date_range(start="2026-01-01", periods=3),
+                "kpi": [10, 20, 15],
+                "Predicted": [12, 18, 14],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            save_causal_chart_data(
+                tmp_dir, line_df, inv_bar_df, sessions_bar_df, accuracy_df, mae=12.34
+            )
+
+            line_out = pd.read_csv(os.path.join(tmp_dir, "line_chart_data.csv"))
+            self.assertEqual(list(line_out["Actual_KPI"]), [10, 20, 15])
+            self.assertEqual(list(line_out["Investment"]), [100, 200, 150])
+
+            inv_out = pd.read_csv(os.path.join(tmp_dir, "investment_data.csv"), index_col=0)
+            self.assertEqual(list(inv_out.index), ["Pre-Event", "Event"])
+            self.assertEqual(list(inv_out["Investment"]), [1000, 2000])
+
+            sessions_out = pd.read_csv(os.path.join(tmp_dir, "sessions_data.csv"), index_col=0)
+            self.assertEqual(list(sessions_out.index), ["Forecasted", "Actual"])
+            self.assertEqual(list(sessions_out["kpi"]), [50, 60])
+
+            accuracy_out = pd.read_csv(os.path.join(tmp_dir, "accuracy_data.csv"))
+            self.assertEqual(list(accuracy_out["Predicted"]), [12, 18, 14])
+            self.assertEqual(list(accuracy_out["mae"]), [12.34, 12.34, 12.34])
 
 
 if __name__ == "__main__":
