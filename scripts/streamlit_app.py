@@ -20,6 +20,7 @@ st.set_page_config(
 )
 
 
+@st.cache_data(ttl=300)
 def get_available_gemini_models(gemini_key):
     """
     Lists available Gemini models that support generateContent and filters the top 5.
@@ -72,50 +73,174 @@ def get_available_gemini_models(gemini_key):
     return preferred_order, MODELS_INFO
 
 
-# Custom CSS for Premium Look
-st.markdown(
-    """
+PREMIUM_CSS = """
 <style>
+    /* Default / Light mode styles */
     .main {
         background-color: #f8f9fa;
         font-family: 'Inter', sans-serif;
     }
-    .stMetric {
+    
+    /* Increase specificity with container prefix to avoid using !important */
+    div[data-testid="stAppViewContainer"] [data-testid="stMetric"] {
         background-color: #ffffff;
         padding: 20px;
         border-radius: 12px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         border: 1px solid #e0e0e0;
+        height: 145px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), 
+                    border-color 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), 
+                    box-shadow 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
     }
-    .stMetric label {
+    
+    div[data-testid="stAppViewContainer"] [data-testid="stMetric"]:hover {
+        transform: translateY(-4px);
+        border-color: var(--primary-color, #ff4b4b);
+        box-shadow: 0 8px 16px rgba(255, 75, 75, 0.15);
+    }
+    
+    div[data-testid="stAppViewContainer"] [data-testid="stMetric"] label,
+    div[data-testid="stAppViewContainer"] [data-testid="stMetric"] [data-testid="stMetricLabel"],
+    div[data-testid="stAppViewContainer"] [data-testid="stMetric"] [data-testid="stMetricValue"],
+    div[data-testid="stAppViewContainer"] [data-testid="stMetric"] [data-testid="stMetricDelta"] {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        width: 100%;
+    }
+    
+    div[data-testid="stAppViewContainer"] [data-testid="stMetric"] label,
+    div[data-testid="stAppViewContainer"] [data-testid="stMetric"] [data-testid="stMetricLabel"] {
         color: #5f6368;
         font-weight: 500;
     }
-    .stMetric .css-1wivap2 {
-        color: #1a73e8;
+    
+    div[data-testid="stAppViewContainer"] [data-testid="stMetric"] [data-testid="stMetricValue"] {
+        color: var(--text-color);
         font-weight: 700;
     }
+    
     h1, h2, h3 {
         color: #202124;
     }
+    
     .card {
         background: white;
         padding: 20px;
         border-radius: 10px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         margin-bottom: 20px;
+        border: 1px solid #e0e0e0;
     }
+    
     .insight-box {
         background-color: #e8f0fe;
         border-left: 4px solid #1a73e8;
         padding: 15px;
         border-radius: 4px;
         margin-top: 15px;
+        color: #1a73e8;
+    }
+    
+    /* Hide the loading bar that appears during reruns/reconnects */
+    [data-testid="stStatusWidget"] { display: none !important; }
+    div[class*="stDecoration"] { display: none !important; }
+    
+    /* Smooth fade-in so the page appears gracefully instead of popping in */
+    [data-testid="stAppViewContainer"] {
+        animation: fadeIn 0.25s ease-in;
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+    }
+
+    /* Theme-aware CSS overrides for Dark Mode */
+    @media (prefers-color-scheme: dark) {
+        .main {
+            background-color: var(--background-color);
+        }
+        div[data-testid="stAppViewContainer"] [data-testid="stMetric"] {
+            background-color: var(--secondary-background-color);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        }
+        div[data-testid="stAppViewContainer"] [data-testid="stMetric"]:hover {
+            border-color: var(--primary-color, #ff4b4b);
+            box-shadow: 0 8px 16px rgba(255, 75, 75, 0.25);
+        }
+        div[data-testid="stAppViewContainer"] [data-testid="stMetric"] label,
+        div[data-testid="stAppViewContainer"] [data-testid="stMetric"] [data-testid="stMetricLabel"] {
+            color: var(--text-color);
+            opacity: 0.8;
+        }
+        h1, h2, h3 {
+            color: var(--text-color);
+        }
+        div[data-testid="stAppViewContainer"] .card {
+            background: var(--secondary-background-color);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        div[data-testid="stAppViewContainer"] .insight-box {
+            background-color: rgba(26, 115, 232, 0.1);
+            color: var(--text-color);
+        }
+    }
+
+    /* Target specific Streamlit theme classes/attributes if present */
+    [data-theme="dark"] .main,
+    html[data-theme="dark"] .main {
+        background-color: var(--background-color);
+    }
+    
+    [data-theme="dark"] [data-testid="stMetric"],
+    html[data-theme="dark"] [data-testid="stMetric"] {
+        background-color: var(--secondary-background-color);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+    }
+    
+    [data-theme="dark"] [data-testid="stMetric"]:hover,
+    html[data-theme="dark"] [data-testid="stMetric"]:hover {
+        border-color: var(--primary-color, #ff4b4b);
+        box-shadow: 0 8px 16px rgba(255, 75, 75, 0.25);
+    }
+    
+    [data-theme="dark"] [data-testid="stMetric"] label,
+    html[data-theme="dark"] [data-testid="stMetric"] label,
+    [data-theme="dark"] [data-testid="stMetric"] [data-testid="stMetricLabel"],
+    html[data-theme="dark"] [data-testid="stMetric"] [data-testid="stMetricLabel"] {
+        color: var(--text-color);
+        opacity: 0.8;
+    }
+    
+    [data-theme="dark"] h1, [data-theme="dark"] h2, [data-theme="dark"] h3,
+    html[data-theme="dark"] h1, html[data-theme="dark"] h2, html[data-theme="dark"] h3 {
+        color: var(--text-color);
+    }
+    
+    [data-theme="dark"] .card,
+    html[data-theme="dark"] .card {
+        background: var(--secondary-background-color);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    
+    [data-theme="dark"] .insight-box,
+    html[data-theme="dark"] .insight-box {
+        background-color: rgba(26, 115, 232, 0.1);
+        color: var(--text-color);
     }
 </style>
-""",
-    unsafe_allow_html=True,
-)
+"""
 
 
 # Ensure we can import modules from the local scripts directory
@@ -124,61 +249,74 @@ import sys
 if os.path.dirname(__file__) not in sys.path:
     sys.path.append(os.path.dirname(__file__))
 
-from db import init_db, create_user, verify_user, add_user_project, get_user_projects, verify_project_ownership, delete_user_project, get_user_api_key, update_user_api_key
+from db import init_db, create_user, verify_user, add_user_project, get_user_projects, verify_project_ownership, delete_user_project, rename_user_project, get_user_api_key, update_user_api_key, create_session, get_session
 from streamlit_cookies_controller import CookieController
 
 init_db()
+# Restore session WITHOUT cookie component (synchronous, no rerun needed)
+if 'user_id' not in st.session_state:
+    # 1. URL query param: ?sid=<token> — survives F5
+    sid = st.query_params.get('sid')
+    if sid:
+        row = get_session(sid)
+        if row:
+            st.session_state['user_id'], st.session_state['username'] = row
 
-# Initialize CookieController as a singleton in session state
+if 'user_id' not in st.session_state:
+    # 2. HTTP cookie headers (Streamlit >= 1.38, works if cookies reach the server)
+    try:
+        _uid = st.context.cookies.get('user_id')
+        _uname = st.context.cookies.get('username')
+        if _uid and _uname:
+            st.session_state['user_id'] = int(_uid)
+            st.session_state['username'] = _uname
+    except Exception:
+        pass
+
+# If already authenticated, stub 'cookies' in session state BEFORE creating CookieController.
+# CookieController.__init__ only calls _cookie_controller() (renders the async JS component)
+# when 'cookies' is NOT in session state. The component then fires setComponentValue() which
+# triggers an extra rerun — causing the visible flicker. Stubbing prevents the component call.
+if 'user_id' in st.session_state and 'cookies' not in st.session_state:
+    st.session_state['cookies'] = {}  # ponytail: stub — CookieController takes else branch, no component rerun
+
+# Initialize CookieController (needed for login cookie write and legacy cookie read fallback)
 if 'cookie_controller' not in st.session_state:
     st.session_state.cookie_controller = CookieController()
 controller = st.session_state.cookie_controller
 
-# Check cookies first to auto-login if session state is empty
 if 'user_id' not in st.session_state:
-    try:
-        # 1. Read synchronously from request headers (works instantly on F5)
-        cookie_user_id = st.context.cookies.get('user_id')
-        cookie_username = st.context.cookies.get('username')
-        
-        if cookie_user_id and cookie_username:
-            st.session_state['user_id'] = int(cookie_user_id)
-            st.session_state['username'] = cookie_username
-            # No rerun needed here, since we are at the very beginning of the script
-            # and setting session_state directly will skip the auth check below.
-        else:
-            # 2. Fallback to component get if headers cookies aren't loaded yet
-            cookie_user_id = controller.get('user_id')
-            cookie_username = controller.get('username')
-            if cookie_user_id and cookie_username:
-                st.session_state['user_id'] = int(cookie_user_id)
-                st.session_state['username'] = cookie_username
-                st.rerun()
-    except Exception:
-        pass
+    # 3. Cookie component fallback (async — component triggers its own rerun when it has data)
+    cookie_user_id = controller.get('user_id')
+    cookie_username = controller.get('username')
+    if cookie_user_id and cookie_username:
+        st.session_state['user_id'] = int(cookie_user_id)
+        st.session_state['username'] = cookie_username
+        st.rerun()
 
-# Authentication check
 if 'user_id' not in st.session_state:
+    st.markdown(PREMIUM_CSS, unsafe_allow_html=True)
     st.markdown("""
         <div style="text-align: center; margin-top: 50px; margin-bottom: 20px;">
             <h1 style="color: #1a73e8; font-size: 2.5rem; font-weight: 700;">Opportunity Engine</h1>
             <p style="color: #5f6368; font-size: 1.1rem;">Por favor, faça o login para acessar a plataforma de Otimização de Oportunidades.</p>
         </div>
     """, unsafe_allow_html=True)
-    
+
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
         auth_mode = st.radio("Selecione a ação", ["Login", "Cadastrar Novo Usuário"])
         username = st.text_input("Usuário", key="login_username")
         password = st.text_input("Senha", type="password", key="login_password")
-        
+
         if auth_mode == "Login":
             if st.button("Entrar", use_container_width=True):
                 user_id = verify_user(username, password)
                 if user_id:
                     st.session_state['user_id'] = user_id
                     st.session_state['username'] = username
-                    # Persist cookies for 30 days
+                    token = create_session(user_id, username)
+                    st.query_params['sid'] = token
                     controller.set('user_id', str(user_id), max_age=30*86400)
                     controller.set('username', username, max_age=30*86400)
                     st.success(f"Bem-vindo, {username}!")
@@ -194,7 +332,8 @@ if 'user_id' not in st.session_state:
                         user_id = create_user(username, password)
                         st.session_state['user_id'] = user_id
                         st.session_state['username'] = username
-                        # Persist cookies for 30 days
+                        token = create_session(user_id, username)
+                        st.query_params['sid'] = token
                         controller.set('user_id', str(user_id), max_age=30*86400)
                         controller.set('username', username, max_age=30*86400)
                         st.success(f"Cadastro realizado! Bem-vindo, {username}!")
@@ -202,6 +341,9 @@ if 'user_id' not in st.session_state:
                     except ValueError as e:
                         st.error(str(e))
     st.stop()
+
+# Authenticated — inject CSS now
+st.markdown(PREMIUM_CSS, unsafe_allow_html=True)
 
 
 st.title("Opportunity Engine")
@@ -237,12 +379,20 @@ if st.session_state.get("active_config_path"):
 # Sidebar user card & Logout
 st.sidebar.markdown(f"**Conectado como:** {st.session_state['username']}")
 if st.sidebar.button("Sair/Logout", use_container_width=True):
-    controller.remove('user_id')
-    controller.remove('username')
-    del st.session_state['user_id']
-    del st.session_state['username']
-    if 'active_config_path' in st.session_state:
-        del st.session_state['active_config_path']
+    # Remove server-side session
+    sid = st.query_params.get('sid')
+    if sid:
+        from db import delete_session
+        delete_session(sid)
+    # Clear query param and cookies (best-effort — cookie may not be in component cache)
+    st.query_params.clear()
+    try:
+        controller.remove('user_id')
+        controller.remove('username')
+    except Exception:
+        pass
+    for key in ['user_id', 'username', 'active_config_path', '_cookie_init_done', 'cookies']:
+        st.session_state.pop(key, None)
     st.rerun()
 st.sidebar.markdown("---")
 
@@ -261,6 +411,26 @@ if project_options:
     if selected_project:
         st.session_state["active_config_path"] = project_options[selected_project]
         
+    # Project Rename UI
+    if st.sidebar.button("Renomear Projeto Atual", key="rename_proj_btn", use_container_width=True):
+        st.session_state['show_rename_confirm'] = True
+
+    if st.session_state.get('show_rename_confirm'):
+        new_name = st.sidebar.text_input("Novo nome:", value=selected_project, key="rename_proj_input")
+        col_ren1, col_ren2 = st.sidebar.columns(2)
+        with col_ren1:
+            if st.button("Salvar", key="confirm_rename_btn", use_container_width=True):
+                if rename_user_project(st.session_state['user_id'], selected_project, new_name):
+                    st.toast(f"Projeto renomeado para '{new_name.strip()}'.")
+                    st.session_state['show_rename_confirm'] = False
+                    st.rerun()
+                else:
+                    st.error("Nome inválido ou já em uso.")
+        with col_ren2:
+            if st.button("Cancelar", key="cancel_rename_btn", use_container_width=True):
+                st.session_state['show_rename_confirm'] = False
+                st.rerun()
+
     # Project Deletion UI
     if st.sidebar.button("Excluir Projeto Atual", key="delete_proj_btn", use_container_width=True):
         st.session_state['show_delete_confirm'] = True
@@ -312,20 +482,33 @@ with tab1:
     )
 
     with st.form("setup_form"):
-        col1, col2 = st.columns(2)
+        st.markdown(
+            """
+            <style>
+            div[data-testid="stColumn"]:has(.col-divider-anchor) {
+                border-right: 1px solid rgba(128, 128, 128, 0.3);
+                padding-right: 2rem;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+        col1, col2 = st.columns(2, gap="large")
 
         with col1:
+            st.markdown('<span class="col-divider-anchor"></span>', unsafe_allow_html=True)
             st.subheader("Configurações Gerais")
             advertiser_name = st.text_input(
-                "Nome do Projeto (Anunciante)", value="Meu_Projeto_Dynamic"
+                "Nome do Projeto",
+                value="Meu_Projeto_Dynamic",
+                help="Usado para nomear as pastas de resultados."
             )
             # Fetch saved API Key from SQLite
             saved_key = get_user_api_key(st.session_state['user_id']) or ""
             gemini_key = st.text_input(
-                "Gemini API Key",
+                "Chave de API do Gemini",
                 value=saved_key,
                 type="password",
-                help="Necessária para geração de insights automáticos.",
             )
 
             env_key = os.environ.get("GEMINI_API_KEY")
@@ -333,48 +516,72 @@ with tab1:
             model_options, models_info = get_available_gemini_models(active_key)
 
             gemini_model = st.selectbox(
-                "Gemini Model",
+                "Modelo do Gemini",
                 options=model_options,
                 format_func=lambda x: models_info.get(x, x),
-                help="Selecione o modelo do Gemini ideal para a sua tarefa. Se uma chave de API válida for informada, os modelos serão filtrados dinamicamente.",
             )
 
-            st.subheader("Dados Brutos (CSV)")
-            inv_file = st.file_uploader(
-                "Dados de Investimento (obrigatório)", type=["csv"]
-            )
-            perf_file = st.file_uploader(
-                "Dados de Performance (obrigatório)", type=["csv"]
-            )
-            trends_file = st.file_uploader(
-                "Dados de Tendências (opcional)", type=["csv"]
-            )
-
-        with col2:
+            st.divider()
             st.subheader("Parâmetros do Negócio")
             kpi_column = st.text_input(
-                "Nome da Coluna do KPI (Ex: Sessions, Conversions)", value="Sessions"
+                "Coluna do KPI no CSV de Performance",
+                value="Sessions",
+                help="Nome exato da coluna (ex: Sessions, Conversions, Leads)."
             )
-            optimization_target = st.selectbox(
-                "Alvo de Otimização", ["CONVERSIONS", "REVENUE"]
+            optimization_target_label = st.selectbox(
+                "Objetivo da Otimização",
+                options=["Maximizar Volume de Conversões (Leads, Vendas, etc.)", "Maximizar Receita / Faturamento (Revenue)"],
+            )
+            optimization_target = (
+                "CONVERSIONS"
+                if "Conversões" in optimization_target_label
+                else "REVENUE"
             )
 
             conversion_rate = (
                 st.number_input(
-                    "Taxa de Conversão KPI -> Venda (%)", value=1.0, step=0.1
+                    "Taxa de Conversão do KPI (%)",
+                    value=1.0,
+                    step=0.1,
+                    help="Deixe 100% se o KPI já for a venda final.",
                 )
                 / 100.0
             )
-            avg_ticket = st.number_input("Ticket Médio (R$)", value=100.0, step=10.0)
+            avg_ticket = st.number_input(
+                "Ticket Médio (R$)",
+                value=100.0,
+                step=10.0,
+            )
 
+        with col2:
+            st.subheader("Dados Brutos (CSV)")
+            inv_file = st.file_uploader(
+                "Investimento (obrigatório)",
+                type=["csv"],
+                help="Investimento diário por canal de mídia."
+            )
+            perf_file = st.file_uploader(
+                "Performance (obrigatório)",
+                type=["csv"],
+                help="Histórico diário de resultados/KPIs."
+            )
+            trends_file = st.file_uploader(
+                "Tendências (opcional)",
+                type=["csv"],
+                help="Variável de controle (ex: Google Trends)."
+            )
+
+            st.divider()
             st.subheader("Restrições de Eficiência (Opcional)")
             target_cpa = st.number_input(
-                "Target CPA Máximo Permissível (R$)",
+                "CPA Máximo (R$)",
                 value=0.0,
-                help="0 = Sem restrição",
+                help="0.00 = sem restrição.",
             )
             target_roas = st.number_input(
-                "Target ROAS Mínimo Permissível", value=0.0, help="0 = Sem restrição"
+                "ROAS Mínimo",
+                value=0.0,
+                help="Ex: 2.5 = R$2,50 por R$1,00 investido. 0.00 = sem restrição.",
             )
 
         col_btn1, col_btn2 = st.columns(2)
@@ -776,7 +983,9 @@ with tab3:
 
             advertiser_name = config.get("advertiser_name", "default_advertiser")
             output_dir = os.path.join(
-                "outputs", advertiser_name, "global_saturation_analysis"
+                config.get("output_directory", "outputs").rstrip("/"),
+                advertiser_name,
+                "global_saturation_analysis",
             )
 
             csv_path = os.path.join(output_dir, "response_curve_data.csv")
