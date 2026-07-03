@@ -128,13 +128,24 @@ from db import init_db, create_user, verify_user, add_user_project, get_user_pro
 from streamlit_cookies_controller import CookieController
 
 init_db()
-controller = CookieController()
+
+# Initialize CookieController as a singleton in session state
+if 'cookie_controller' not in st.session_state:
+    st.session_state.cookie_controller = CookieController()
+controller = st.session_state.cookie_controller
 
 # Check cookies first to auto-login if session state is empty
 if 'user_id' not in st.session_state:
     try:
-        cookie_user_id = controller.get('user_id')
-        cookie_username = controller.get('username')
+        # 1. Read synchronously from request headers (works instantly on F5)
+        cookie_user_id = st.context.cookies.get('user_id')
+        cookie_username = st.context.cookies.get('username')
+        
+        # 2. Fallback to component get if headers cookies aren't loaded yet
+        if not cookie_user_id or not cookie_username:
+            cookie_user_id = controller.get('user_id')
+            cookie_username = controller.get('username')
+            
         if cookie_user_id and cookie_username:
             st.session_state['user_id'] = int(cookie_user_id)
             st.session_state['username'] = cookie_username
@@ -163,8 +174,9 @@ if 'user_id' not in st.session_state:
                 if user_id:
                     st.session_state['user_id'] = user_id
                     st.session_state['username'] = username
-                    controller.set('user_id', str(user_id))
-                    controller.set('username', username)
+                    # Persist cookies for 30 days
+                    controller.set('user_id', str(user_id), max_age=30*86400)
+                    controller.set('username', username, max_age=30*86400)
                     st.success(f"Bem-vindo, {username}!")
                     st.rerun()
                 else:
@@ -178,8 +190,9 @@ if 'user_id' not in st.session_state:
                         user_id = create_user(username, password)
                         st.session_state['user_id'] = user_id
                         st.session_state['username'] = username
-                        controller.set('user_id', str(user_id))
-                        controller.set('username', username)
+                        # Persist cookies for 30 days
+                        controller.set('user_id', str(user_id), max_age=30*86400)
+                        controller.set('username', username, max_age=30*86400)
                         st.success(f"Cadastro realizado! Bem-vindo, {username}!")
                         st.rerun()
                     except ValueError as e:
