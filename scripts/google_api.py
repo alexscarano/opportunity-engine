@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
+os.environ.setdefault("GRPC_VERBOSITY", "ERROR")
+os.environ.setdefault("GLOG_minloglevel", "3")
 import google.generativeai as genai
 
 
@@ -37,7 +39,6 @@ def authenticate_gemini(api_key=None, model_name=None):
         selected_model = model_name if model_name else "gemini-3.5-flash"
 
         if available_models:
-            print(f"Available models: {available_models}")
             if model_name:
                 matched = False
                 for a_model in available_models:
@@ -63,9 +64,7 @@ def authenticate_gemini(api_key=None, model_name=None):
                     available_models[0],
                 )
 
-        print(f"Selecting model: {selected_model}")
         gemini_client = genai.GenerativeModel(selected_model)
-        print("Gemini client authenticated successfully.")
         return gemini_client
     except Exception as e:
         print(f"An unexpected error occurred during Gemini authentication: {e}")
