@@ -373,6 +373,39 @@ def run_mmm_engine(config):
     }
 
 
+def cap_channel_mix_share(mix, historical_mix, max_share):
+    """Caps any channel's share of `mix` at `max_share`, redistributing the
+    excess to the remaining channels weighted by their own share (falling
+    back to `historical_mix`, then an even split, when every other channel
+    is at zero). Guards against a single channel monopolizing the whole
+    recommended mix under collinear spend data."""
+    if max_share is None or max_share >= 1.0:
+        return dict(mix)
+
+    capped = dict(mix)
+    for _ in range(len(capped)):
+        over = {k: v for k, v in capped.items() if v > max_share}
+        if not over:
+            break
+
+        excess = sum(v - max_share for v in over.values())
+        for k in over:
+            capped[k] = max_share
+
+        under_keys = [k for k in capped if k not in over]
+        weights = {k: capped[k] for k in under_keys}
+        if sum(weights.values()) <= 0:
+            weights = {k: historical_mix.get(k, 0) for k in under_keys}
+        if sum(weights.values()) <= 0:
+            weights = {k: 1.0 for k in under_keys}
+
+        total_weight = sum(weights.values())
+        for k in under_keys:
+            capped[k] += excess * (weights[k] / total_weight)
+
+    return capped
+
+
 def generate_aggregated_response_curve(
     elasticity_results, config, optimized_mix=None, output_dir=None
 ):
@@ -399,6 +432,10 @@ def generate_aggregated_response_curve(
     strategic_mix = {
         k: v / 100.0 for k, v in elasticity_results["contribution_pct"].items()
     }
+    max_channel_mix_share = config.get("max_channel_mix_share", 0.4)
+    strategic_mix = cap_channel_mix_share(
+        strategic_mix, historical_mix, max_channel_mix_share
+    )
     if not optimized_mix:
         optimized_mix = historical_mix
 
