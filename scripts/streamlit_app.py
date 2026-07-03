@@ -938,6 +938,29 @@ with tab2:
             event_dirs.add(os.path.dirname(r))
 
         if event_dirs:
+            validated_keys = set()
+            for d in event_dirs:
+                parts = d.split(os.sep)
+                if len(parts) >= 2:
+                    validated_keys.add((parts[-2], parts[-1]))
+
+            detected_events_path = os.path.join(adv_dir, "detected_events.csv")
+            if os.path.exists(detected_events_path):
+                st.markdown("### Visão Geral dos Eventos Detectados")
+                st.markdown(
+                    "Todos os picos e quedas de investimento detectados ao longo do histórico. "
+                    "Barras cheias tiveram significância estatística confirmada e têm um relatório "
+                    "navegável abaixo; barras esmaecidas foram descartadas (não passaram nos "
+                    "critérios de p-value/R² ou ficaram fora do limite de eventos analisados)."
+                )
+                st.plotly_chart(
+                    build_events_overview(
+                        pd.read_csv(detected_events_path), validated_keys
+                    ),
+                    use_container_width=True,
+                )
+                st.markdown("---")
+
             report_options = {}
             for d in event_dirs:
                 parts = d.split(os.sep)
