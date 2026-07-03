@@ -444,17 +444,39 @@ if project_options:
                 # Verify ownership to prevent IDOR on delete
                 if verify_project_ownership(st.session_state['user_id'], path_to_delete):
                     import shutil
-                    # Delete files on disk
+                    import json
+                    
+                    # 1. Determine output directory from config file before deleting it
+                    actual_output_dir = None
+                    if os.path.exists(path_to_delete):
+                        try:
+                            with open(path_to_delete, "r", encoding="utf-8") as f:
+                                cfg = json.load(f)
+                            out_dir_base = cfg.get("output_directory", "outputs")
+                            adv_name = cfg.get("advertiser_name", selected_project)
+                            actual_output_dir = os.path.join(out_dir_base, adv_name)
+                        except Exception:
+                            pass
+                    
+                    if not actual_output_dir:
+                        actual_output_dir = os.path.join("outputs", f"user_{st.session_state['user_id']}", selected_project)
+                    
+                    # 2. Delete input directory
                     project_dir = os.path.dirname(path_to_delete)
                     if os.path.exists(project_dir):
-                        shutil.rmtree(project_dir)
+                        try:
+                            shutil.rmtree(project_dir)
+                        except Exception as e:
+                            st.sidebar.error(f"Erro ao excluir arquivos de entrada: {e}")
                     
-                    # Delete output directory if it exists
-                    user_output_dir = os.path.join("outputs", f"user_{st.session_state['user_id']}", selected_project)
-                    if os.path.exists(user_output_dir):
-                        shutil.rmtree(user_output_dir)
+                    # 3. Delete output directory
+                    if os.path.exists(actual_output_dir):
+                        try:
+                            shutil.rmtree(actual_output_dir)
+                        except Exception as e:
+                            st.sidebar.error(f"Erro ao excluir arquivos de saída: {e}")
                     
-                    # Delete from SQLite
+                    # 4. Delete from SQLite
                     delete_user_project(st.session_state['user_id'], selected_project)
                     
                     st.toast(f"Projeto '{selected_project}' excluído com sucesso.")

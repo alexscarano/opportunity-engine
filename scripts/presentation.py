@@ -12,7 +12,7 @@ from matplotlib.ticker import FuncFormatter
 import numpy as np
 import sys
 
-sys.path.append(os.path.abspath("scripts"))
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 try:
     import analysis
@@ -61,23 +61,23 @@ def save_accuracy_plot(results_data, accuracy_df, output_path, kpi_name="kpi"):
         accuracy_df["kpi"],
         color="black",
         linestyle="-",
-        label=f"Actual {kpi_name}",
+        label=f"{kpi_name} Real",
     )
     ax.plot(
         accuracy_df["Date"],
         accuracy_df["Predicted"],
         color="red",
         linestyle="--",
-        label=f"Predicted {kpi_name} (In-Sample)",
+        label=f"{kpi_name} Previsto (In-Sample)",
     )
 
     ax.set_title(
-        f"Model Accuracy: Actual vs. Predicted (Pre-Event Period)", fontsize=18, pad=20
+        f"Acurácia do Modelo: Real vs. Previsto (Período Pré-Evento)", fontsize=18, pad=20
     )
     ax.set_ylabel(kpi_name, fontsize=14)
 
     # Add styled text box for MAE
-    mae_text = f"MAE (last 90 days): {results_data.get('mae', 0):.2f}"
+    mae_text = f"MAE (últimos 90 dias): {results_data.get('mae', 0):.2f}"
     props = dict(boxstyle="round", facecolor="wheat", alpha=0.5)
     ax.text(
         0.05,
@@ -109,16 +109,16 @@ def save_line_chart_plot(line_df, output_path, kpi_name="kpi"):
         line_df["Actual_KPI"],
         color="black",
         linestyle="-",
-        label=f"Actual {kpi_name}",
+        label=f"{kpi_name} Real",
     )
     ax1.plot(
         line_df["Date"],
         line_df["Forecasted_KPI"],
         color="red",
         linestyle="--",
-        label=f"Forecasted {kpi_name}",
+        label=f"{kpi_name} Previsto",
     )
-    ax1.set_xlabel("Date", fontsize=14)
+    ax1.set_xlabel("Data", fontsize=14)
     ax1.set_ylabel(kpi_name, fontsize=14)
     ax1.tick_params(axis="y")
 
@@ -129,13 +129,13 @@ def save_line_chart_plot(line_df, output_path, kpi_name="kpi"):
         line_df["Investment"],
         color="blue",
         alpha=0.3,
-        label="Investment",
+        label="Investimento",
     )
-    ax2.set_ylabel("Investment", color="blue", fontsize=14)
+    ax2.set_ylabel("Investimento", color="blue", fontsize=14)
     ax2.tick_params(axis="y", labelcolor="blue")
 
     # Formatting and legends
-    ax1.set_title("Causal Impact Analysis: Actual vs. Forecasted", fontsize=18, pad=20)
+    ax1.set_title("Análise de Causal Impact: Real vs. Previsto", fontsize=18, pad=20)
     fig.tight_layout()
 
     # Combine legends from both axes
@@ -151,9 +151,10 @@ def save_investment_bar_plot(inv_bar_df, output_path):
     """Saves the investment bar chart to a file."""
     plt.style.use("seaborn-v0_8-whitegrid")
     fig, ax = plt.subplots(figsize=(10, 7))
+    inv_bar_df = inv_bar_df.rename(index={"Pre-Event": "Pré-Evento", "Event": "Evento"})
     inv_bar_df.plot(kind="bar", ax=ax, color=["gray", "green"], legend=None)
-    ax.set_title("Investment: Pre-Event vs. Event", fontsize=16)
-    ax.set_ylabel("Total Investment", fontsize=12)
+    ax.set_title("Investimento: Pré-Evento vs. Evento", fontsize=16)
+    ax.set_ylabel("Investimento Total", fontsize=12)
     ax.tick_params(axis="x", rotation=0)
     # Use a generic formatter for the y-axis
     ax.yaxis.set_major_formatter(
@@ -172,22 +173,22 @@ def save_sessions_bar_plot(sessions_bar_df, output_path, kpi_name="kpi"):
     # Robust index renaming
     if "Forecasted" in sessions_bar_df.index and "Actual" in sessions_bar_df.index:
         new_index = {
-            "Forecasted": f"Forecasted {kpi_name}",
-            "Actual": f"Actual {kpi_name}",
+            "Forecasted": f"{kpi_name} Previsto",
+            "Actual": f"{kpi_name} Real",
         }
         sessions_bar_df = sessions_bar_df.rename(index=new_index)
     else:
         # Fallback if upstream logic changes (though analysis.py currently sets it correctly)
-        sessions_bar_df.index = [f"Forecasted {kpi_name}", f"Actual {kpi_name}"]
+        sessions_bar_df.index = [f"{kpi_name} Previsto", f"{kpi_name} Real"]
 
     # Ensure colors map to the correct semantic meaning regardless of order
     colors = [
-        "red" if "Forecasted" in str(x) else "black" for x in sessions_bar_df.index
+        "red" if "Previsto" in str(x) or "Forecasted" in str(x) else "black" for x in sessions_bar_df.index
     ]
 
     sessions_bar_df.plot(kind="bar", ax=ax, color=colors, legend=None)
-    ax.set_title(f"Actual vs. Forecasted {kpi_name}", fontsize=16)
-    ax.set_ylabel(f"Total {kpi_name}", fontsize=12)
+    ax.set_title(f"{kpi_name} Real vs. Previsto", fontsize=16)
+    ax.set_ylabel(f"Total de {kpi_name}", fontsize=12)
     ax.tick_params(axis="x", rotation=0)
     ax.yaxis.set_major_formatter(
         mticker.FuncFormatter(lambda x, p: format(int(x), ","))
