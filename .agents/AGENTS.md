@@ -13,6 +13,7 @@ The Max Impact Engine is a Python-based marketing analytics platform. It automat
 
 ## 2. Technology Stack & Environment
 - **Runtime:** Python 3.13+ managed via `mise` (`mise.toml`) and `uv` as the package resolver/installer.
+- **Execution:** Always execute Python commands using `mise exec -- X` (e.g., `mise exec -- python scripts/local_main.py`). If a specific command is executed repeatedly, create/define a task in `mise.toml` under `[tasks]` to simplify run commands.
 - **Frontend:** Streamlit (`scripts/streamlit_app.py`) with Google Sign-in integration.
 - **Data & Modeling:** `pandas`, `numpy`, `scipy`, `statsmodels`, `scikit-learn`, `plotly`, `matplotlib`.
 - **AI Integrations:** Google Gemini API (`google-generativeai`) for strategic text reports.
