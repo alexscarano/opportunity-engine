@@ -217,3 +217,42 @@ def build_channel_saturation_comparison(individual_df):
         margin=dict(l=20, r=20, t=50, b=20),
     )
     return fig
+
+
+def build_events_overview(events_df, validated_keys):
+    """Bar chart of every detected event (spike/drop), faded if it never became a validated report."""
+    events = events_df.copy()
+    events["date"] = pd.to_datetime(events["date"])
+    events["channel_folder"] = events["ad_product"].str.replace(", ", "_", regex=False)
+    events["validated"] = events.apply(
+        lambda row: (row["channel_folder"], row["date"].strftime("%Y-%m-%d")) in validated_keys,
+        axis=1,
+    )
+
+    colors = ["#2ca02c" if v >= 0 else "#d62728" for v in events["percentage_change"]]
+    opacities = [1.0 if v else 0.35 for v in events["validated"]]
+    hover_labels = [
+        f"{ch}<br>{'Validado (tem relatório)' if val else 'Descartado (sem relatório)'}"
+        for ch, val in zip(events["ad_product"], events["validated"])
+    ]
+
+    fig = go.Figure(
+        go.Bar(
+            x=events["date"],
+            y=events["percentage_change"],
+            marker=dict(color=colors, opacity=opacities),
+            text=hover_labels,
+            hovertemplate=(
+                "<b>Data:</b> %{x|%d/%m/%Y}<br><b>Variação:</b> %{y:.1f}%"
+                "<br>%{text}<extra></extra>"
+            ),
+        )
+    )
+
+    fig.update_layout(
+        xaxis_title="Data do Evento",
+        yaxis_title="Variação de Investimento (%)",
+        margin=dict(l=20, r=20, t=30, b=20),
+        showlegend=False,
+    )
+    return fig

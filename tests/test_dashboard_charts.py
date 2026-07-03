@@ -13,6 +13,7 @@ from dashboard_charts import (
     build_revenue_roi_curve,
     build_channel_mix_evolution,
     build_channel_saturation_comparison,
+    build_events_overview,
 )
 
 
@@ -136,6 +137,24 @@ class TestBuildChannelSaturationComparison(unittest.TestCase):
         # META has a flat curve (min == max): normalization must not divide by zero
         meta_trace = fig.data[names.index("META")]
         self.assertEqual(list(meta_trace.y), [0.0, 0.0])
+
+
+class TestBuildEventsOverview(unittest.TestCase):
+
+    def test_colors_by_direction_and_fades_discarded_events(self):
+        events_df = pd.DataFrame({
+            "date": ["2025-01-06", "2025-01-13"],
+            "ad_product": ["AWIN, BING", "GOOGLE"],
+            "percentage_change": [150.0, -80.0],
+        })
+        validated_keys = {("AWIN_BING", "2025-01-06")}
+
+        fig = build_events_overview(events_df, validated_keys)
+
+        self.assertEqual(list(fig.data[0].x), list(pd.to_datetime(events_df["date"])))
+        self.assertEqual(list(fig.data[0].y), [150.0, -80.0])
+        self.assertEqual(tuple(fig.data[0].marker.color), ("#2ca02c", "#d62728"))
+        self.assertEqual(tuple(fig.data[0].marker.opacity), (1.0, 0.35))
 
 
 if __name__ == "__main__":
