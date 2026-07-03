@@ -128,29 +128,46 @@ def build_revenue_roi_curve(df_plot, kpi_name="kpi"):
 
 
 def build_channel_mix_evolution(df_plot, baseline_monthly_inv=None, optimal_monthly_inv=None):
-    """100%-stacked area of each channel's Strategic-mix share vs Monthly_Investment."""
+    """100%-stacked area of each channel's Strategic-mix share vs Monthly_Investment (log scale).
+
+    Keeps only the top channels (by average share) distinct and folds the rest into
+    "Outros" — past ~7-8 series a stacked chart stops being legible.
+    """
+    top_n = 6
     strategic_cols = [
         c for c in df_plot.columns if c.startswith("Spend_") and c.endswith("_Strategic")
     ]
     channel_names = [c.replace("Spend_", "").replace("_Strategic", "") for c in strategic_cols]
 
-    totals = df_plot[strategic_cols].sum(axis=1)
-    shares = df_plot[strategic_cols].div(totals.replace(0, np.nan), axis=0).fillna(0) * 100
+    # Log x-axis can't plot Investment=0, and the saturation curve is flat there anyway.
+    plot_df = df_plot[df_plot["Monthly_Investment"] > 0]
+
+    totals = plot_df[strategic_cols].sum(axis=1)
+    shares = plot_df[strategic_cols].div(totals.replace(0, np.nan), axis=0).fillna(0) * 100
     shares.columns = channel_names
 
     order = shares.mean().sort_values(ascending=False).index
+    top_channels = list(order[:top_n])
+    other_channels = list(order[top_n:])
+
+    plot_shares = shares[top_channels].copy()
+    if other_channels:
+        plot_shares["Outros"] = shares[other_channels].sum(axis=1)
+    channel_order = top_channels + (["Outros"] if other_channels else [])
+
     palette = px.colors.qualitative.Plotly
 
     fig = go.Figure()
-    for i, channel in enumerate(order):
+    for i, channel in enumerate(channel_order):
+        color = "gray" if channel == "Outros" else palette[i % len(palette)]
         fig.add_trace(
             go.Scatter(
-                x=df_plot["Monthly_Investment"],
-                y=shares[channel],
+                x=plot_df["Monthly_Investment"],
+                y=plot_shares[channel],
                 mode="lines",
                 name=channel,
                 stackgroup="one",
-                line=dict(width=0.5, color=palette[i % len(palette)]),
+                line=dict(width=0.5, color=color),
                 hovertemplate=f"<b>{channel}:</b> %{{y:.1f}}%<extra></extra>",
             )
         )
@@ -173,7 +190,7 @@ def build_channel_mix_evolution(df_plot, baseline_monthly_inv=None, optimal_mont
     fig.update_layout(
         xaxis_title="Investimento Mensal",
         yaxis_title="Participação no Mix (%)",
-        xaxis=dict(tickformat=".2s"),
+        xaxis=dict(type="log", tickformat=".2s"),
         yaxis=dict(range=[0, 100]),
         hovermode="x unified",
         hoverlabel=dict(namelength=-1),

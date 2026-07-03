@@ -121,6 +121,34 @@ class TestBuildChannelMixEvolution(unittest.TestCase):
         )
         self.assertEqual(len(fig.layout.shapes), 2)
 
+    def test_folds_extra_channels_into_outros_beyond_top_n(self):
+        df_plot = pd.DataFrame({
+            "Monthly_Investment": [1000],
+            "Spend_A_Strategic": [500],
+            "Spend_B_Strategic": [200],
+            "Spend_C_Strategic": [100],
+            "Spend_D_Strategic": [80],
+            "Spend_E_Strategic": [60],
+            "Spend_F_Strategic": [40],
+            "Spend_G_Strategic": [15],
+            "Spend_H_Strategic": [5],
+        })
+        fig = build_channel_mix_evolution(df_plot)
+        names = [trace.name for trace in fig.data]
+        self.assertEqual(names, ["A", "B", "C", "D", "E", "F", "Outros"])
+        outros_trace = fig.data[names.index("Outros")]
+        self.assertAlmostEqual(outros_trace.y[0], 2.0)
+
+    def test_uses_log_x_axis_and_drops_zero_investment_point(self):
+        df_plot = pd.DataFrame({
+            "Monthly_Investment": [0, 1000, 2000],
+            "Spend_GOOGLE_Strategic": [0, 700, 1600],
+            "Spend_META_Strategic": [0, 300, 400],
+        })
+        fig = build_channel_mix_evolution(df_plot)
+        self.assertEqual(fig.layout.xaxis.type, "log")
+        self.assertEqual(list(fig.data[0].x), [1000, 2000])
+
 
 class TestBuildChannelSaturationComparison(unittest.TestCase):
 
