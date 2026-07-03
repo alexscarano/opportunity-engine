@@ -124,7 +124,7 @@ import sys
 if os.path.dirname(__file__) not in sys.path:
     sys.path.append(os.path.dirname(__file__))
 
-from db import init_db, create_user, verify_user, add_user_project, get_user_projects, verify_project_ownership, delete_user_project
+from db import init_db, create_user, verify_user, add_user_project, get_user_projects, verify_project_ownership, delete_user_project, get_user_api_key, update_user_api_key
 from streamlit_cookies_controller import CookieController
 
 init_db()
@@ -302,8 +302,11 @@ with tab1:
             advertiser_name = st.text_input(
                 "Nome do Projeto (Anunciante)", value="Meu_Projeto_Dynamic"
             )
+            # Fetch saved API Key from SQLite
+            saved_key = get_user_api_key(st.session_state['user_id']) or ""
             gemini_key = st.text_input(
                 "Gemini API Key",
+                value=saved_key,
                 type="password",
                 help="Necessária para geração de insights automáticos.",
             )
@@ -362,6 +365,9 @@ with tab1:
         )
 
     if submit_btn:
+        # Persist user's Gemini API Key in SQLite
+        update_user_api_key(st.session_state['user_id'], gemini_key)
+        
         if not inv_file or not perf_file:
             st.error(
                 "Por favor, faça upload dos arquivos de Investimento e Performance para continuar."

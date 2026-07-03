@@ -16,6 +16,8 @@ from db import (
     get_user_projects,
     verify_project_ownership,
     delete_user_project,
+    get_user_api_key,
+    update_user_api_key,
 )
 
 
@@ -92,6 +94,20 @@ class TestDBHelper(unittest.TestCase):
                 user2, "inputs/user_2/Proj_B/config.json", self.db_path
             )
         )
+
+    def test_api_key_persistence(self):
+        user = create_user("user1", "pass", self.db_path)
+        
+        # Initially None
+        self.assertIsNone(get_user_api_key(user, self.db_path))
+        
+        # Update and verify
+        update_user_api_key(user, "AIzaSyDummyKey", self.db_path)
+        self.assertEqual(get_user_api_key(user, self.db_path), "AIzaSyDummyKey")
+        
+        # Update to empty/None and verify
+        update_user_api_key(user, "", self.db_path)
+        self.assertIsNone(get_user_api_key(user, self.db_path))
 
 
 if __name__ == "__main__":
