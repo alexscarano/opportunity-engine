@@ -1,4 +1,12 @@
 import streamlit as st
+import time
+
+# Sync frame delay to prevent F5 flicker
+if 'initialized' not in st.session_state:
+    st.session_state['initialized'] = True
+    time.sleep(0.05)  # Allow WebSocket connection handshake to populate cookies in st.context
+    st.rerun()
+
 import pandas as pd
 import numpy as np
 import json
@@ -14,7 +22,7 @@ logger = logging.getLogger("opp_engine_tracker")
 # Optional: keep logging for raw actions without email barriers, if desired later, but removing barrier logic here.
 
 st.set_page_config(
-    page_title="Max Impact Engine (Total Opportunity)",
+    page_title="Opportunity Engine",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -200,7 +208,7 @@ if 'user_id' not in st.session_state:
     st.stop()
 
 
-st.title("Max Impact Engine (Total Opportunity)")
+st.title("Opportunity Engine")
 st.markdown(
     "Explore alocações de orçamento ótimas, preveja retornos de KPI e encontre interativamente seu cenário ideal."
 )
