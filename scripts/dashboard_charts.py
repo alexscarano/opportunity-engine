@@ -84,3 +84,42 @@ def build_icpa_curve(
         margin=dict(l=20, r=20, t=50, b=20),
     )
     return fig
+
+
+def build_revenue_roi_curve(df_plot, kpi_name="kpi"):
+    """Dual-axis chart: Projected Revenue (left) and Incremental ROI (right) vs Monthly_Investment."""
+    finite_roi = df_plot[np.isfinite(df_plot["Incremental_ROI"])]
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=df_plot["Monthly_Investment"],
+            y=df_plot["Projected_Revenue"] * 30,
+            mode="lines",
+            name="Receita Projetada (Mensal)",
+            line=dict(color="royalblue", width=3),
+            hovertemplate="<b>Investimento:</b> R$ %{x:.2s}<br><b>Receita:</b> R$ %{y:.2s}<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=finite_roi["Monthly_Investment"],
+            y=finite_roi["Incremental_ROI"],
+            mode="lines",
+            name="ROI Incremental",
+            line=dict(color="darkorange", width=3, dash="dash"),
+            yaxis="y2",
+            hovertemplate="<b>Investimento:</b> R$ %{x:.2s}<br><b>ROI Incremental:</b> %{y:.2f}x<extra></extra>",
+        )
+    )
+
+    fig.update_layout(
+        xaxis_title="Investimento Mensal",
+        yaxis=dict(title="Receita Projetada (R$)", tickformat=".2s"),
+        yaxis2=dict(title="ROI Incremental", overlaying="y", side="right"),
+        xaxis=dict(tickformat=".2s"),
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="top", y=1.15, xanchor="center", x=0.5),
+        margin=dict(l=20, r=20, t=50, b=20),
+    )
+    return fig

@@ -8,7 +8,7 @@ sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "scripts"))
 )
 
-from dashboard_charts import build_icpa_curve
+from dashboard_charts import build_icpa_curve, build_revenue_roi_curve
 
 
 class TestBuildIcpaCurve(unittest.TestCase):
@@ -57,6 +57,30 @@ class TestBuildIcpaCurve(unittest.TestCase):
         self.assertEqual(len(fig_with_targets.layout.shapes), 2)
         y_values = sorted(shape.y0 for shape in fig_with_targets.layout.shapes)
         self.assertEqual(y_values, [4.0, 7.0])
+
+
+class TestBuildRevenueRoiCurve(unittest.TestCase):
+
+    def setUp(self):
+        self.df_plot = pd.DataFrame({
+            "Monthly_Investment": [1000, 2000, 3000],
+            "Projected_Revenue": [100, 150, 200],
+            "Incremental_ROI": [np.inf, 2.5, 3.0],
+        })
+
+    def test_revenue_trace_scales_daily_to_monthly(self):
+        fig = build_revenue_roi_curve(self.df_plot, kpi_name="Vendas")
+        self.assertEqual(fig.data[0].name, "Receita Projetada (Mensal)")
+        self.assertEqual(list(fig.data[0].y), [3000, 4500, 6000])
+
+    def test_roi_trace_filters_non_finite_and_uses_secondary_axis(self):
+        fig = build_revenue_roi_curve(self.df_plot)
+        self.assertEqual(fig.data[1].name, "ROI Incremental")
+        self.assertEqual(fig.data[1].yaxis, "y2")
+        self.assertEqual(list(fig.data[1].x), [2000, 3000])
+        self.assertEqual(list(fig.data[1].y), [2.5, 3.0])
+        self.assertEqual(fig.layout.yaxis2.overlaying, "y")
+        self.assertEqual(fig.layout.yaxis2.side, "right")
 
 
 if __name__ == "__main__":
