@@ -64,7 +64,7 @@ def authenticate_google_services():
         return None, None, None, None
 
 
-def authenticate_gemini(api_key=None):
+def authenticate_gemini(api_key=None, model_name=None):
     """Authenticates the Gemini client using an API key and selects the best available model."""
     if api_key is None:
         api_key = os.environ.get("GEMINI_API_KEY")
@@ -85,22 +85,35 @@ def authenticate_gemini(api_key=None):
         except Exception as list_err:
             print(f"Warning: Could not list models: {list_err}. Defaulting to fallbacks.")
 
-        selected_model = "gemini-1.5-flash"  # Default fallback
+        selected_model = model_name if model_name else "gemini-1.5-flash"  # Default fallback
         
         if available_models:
-            print(f"ℹ️ Available models: {available_models}")
-            priority = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
-            found = False
-            for p_model in priority:
+            print(f"Available models: {available_models}")
+            if model_name:
+                # Validate the requested model name is available (either exact or ends with)
+                matched = False
                 for a_model in available_models:
-                    if a_model == p_model or a_model.endswith(f"/{p_model}"):
+                    if a_model == model_name or a_model.endswith(f"/{model_name}"):
                         selected_model = a_model
-                        found = True
+                        matched = True
                         break
-                if found:
-                    break
-            if not found:
-                selected_model = available_models[0]
+                if not matched:
+                    print(f"Warning: Requested model '{model_name}' not found in available models. Selecting a priority fallback instead.")
+                    model_name = None
+            
+            if not model_name:
+                priority = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
+                found = False
+                for p_model in priority:
+                    for a_model in available_models:
+                        if a_model == p_model or a_model.endswith(f"/{p_model}"):
+                            selected_model = a_model
+                            found = True
+                            break
+                    if found:
+                        break
+                if not found:
+                    selected_model = available_models[0]
                 
         print(f"Selecting model: {selected_model}")
         gemini_client = genai.GenerativeModel(selected_model)

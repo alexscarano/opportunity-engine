@@ -19,6 +19,50 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+def get_available_gemini_models(gemini_key):
+    """
+    Lists available Gemini models that support generateContent and filters the top 5.
+    """
+    MODELS_INFO = {
+        "gemini-2.0-flash": "Gemini 2.0 Flash (Mais rápido e inteligente, recomendado)",
+        "gemini-1.5-flash": "Gemini 1.5 Flash (Rápido e econômico)",
+        "gemini-1.5-pro": "Gemini 1.5 Pro (Raciocínio complexo, ideal para relatórios detalhados)",
+        "gemini-2.0-flash-lite": "Gemini 2.0 Flash Lite (Ultra rápido e leve)",
+        "gemini-2.0-pro-exp": "Gemini 2.0 Pro Experimental (Máxima inteligência experimental)"
+    }
+    
+    preferred_order = [
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+        "gemini-2.0-flash-lite",
+        "gemini-2.0-pro-exp"
+    ]
+    
+    if not gemini_key:
+        return preferred_order, MODELS_INFO
+        
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=gemini_key)
+        api_models = []
+        for m in genai.list_models():
+            if "generateContent" in m.supported_generation_methods:
+                name = m.name.replace("models/", "")
+                api_models.append(name)
+                
+        if api_models:
+            filtered = [m for m in preferred_order if m in api_models]
+            others = [m for m in api_models if m not in filtered]
+            combined = (filtered + others)[:5]
+            if combined:
+                return combined, MODELS_INFO
+    except Exception:
+        pass
+        
+    return preferred_order, MODELS_INFO
+
+
 # Custom CSS for Premium Look
 st.markdown("""
 <style>
@@ -134,6 +178,17 @@ with tab1:
             advertiser_name = st.text_input("Nome do Projeto (Anunciante)", value="Meu_Projeto_Dynamic")
             gemini_key = st.text_input("Gemini API Key", type="password", help="Necessária para geração de insights automáticos.")
             
+            env_key = os.environ.get("GEMINI_API_KEY")
+            active_key = gemini_key if gemini_key else env_key
+            model_options, models_info = get_available_gemini_models(active_key)
+            
+            gemini_model = st.selectbox(
+                "Gemini Model",
+                options=model_options,
+                format_func=lambda x: models_info.get(x, x),
+                help="Selecione o modelo do Gemini ideal para a sua tarefa. Se uma chave de API válida for informada, os modelos serão filtrados dinamicamente."
+            )
+            
             st.subheader("Dados Brutos (CSV)")
             inv_file = st.file_uploader("Dados de Investimento (obrigatório)", type=['csv'])
             perf_file = st.file_uploader("Dados de Performance (obrigatório)", type=['csv'])
@@ -243,6 +298,7 @@ with tab1:
                 trends_col = get_trends_col(trends_path) if trends_path else "Ad Opportunities"
 
                 dynamic_config = {
+                  "gemini_model": gemini_model,
                   "advertiser_name": f"{safe_adv_name}_dynamic",
                   "client_industry": "Dynamic Execution",
                   "client_business_goal": "Optimize through Streamlit",

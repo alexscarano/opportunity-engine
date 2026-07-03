@@ -71,7 +71,8 @@ def main(config, args):
     """Main execution block for the script."""
     
     load_dotenv()
-    gemini_client = google_api.authenticate_gemini()
+    model_name = config.get("gemini_model")
+    gemini_client = google_api.authenticate_gemini(model_name=model_name)
 
     try:
         kpi_df, daily_investment_df, trends_df, correlation_matrix = data_preprocessor.load_and_prepare_data(config)
