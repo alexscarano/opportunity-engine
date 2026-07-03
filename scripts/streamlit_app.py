@@ -158,8 +158,11 @@ if 'user_id' not in st.session_state:
                     st.error("Preencha usuário e senha.")
                 else:
                     try:
-                        create_user(username, password)
-                        st.success("Usuário cadastrado com sucesso! Faça o login.")
+                        user_id = create_user(username, password)
+                        st.session_state['user_id'] = user_id
+                        st.session_state['username'] = username
+                        st.success(f"Cadastro realizado! Bem-vindo, {username}!")
+                        st.rerun()
                     except ValueError as e:
                         st.error(str(e))
     st.stop()
