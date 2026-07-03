@@ -684,11 +684,13 @@ def generate_individual_response_curves(
     for target_channel in active_spend_cols:
         target_avg_spend = avg_daily_spend[target_channel]
         max_spend = target_avg_spend * limit_factor
+        rec_spend = None
         if strategic_limit_point:
             rec_spend = strategic_limit_point.get(
-                f"Spend_{target_channel}_Strategic", 0
+                f"Spend_{target_channel}_Strategic", None
             )
-            max_spend = max(max_spend, rec_spend * 1.2)  # Give some padding
+            if rec_spend is not None:
+                max_spend = max(max_spend, rec_spend * 1.2)  # Give some padding
 
         spend_points = np.linspace(0, max_spend, 100)
 
@@ -716,6 +718,8 @@ def generate_individual_response_curves(
                     "Channel": target_channel,
                     "Channel_Spend": spend,
                     "Projected_Total_KPIs": predicted_kpi,
+                    "Historical_Avg": target_avg_spend,
+                    "Recommended": rec_spend,
                 }
             )
 
