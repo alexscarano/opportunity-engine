@@ -1,12 +1,4 @@
 import streamlit as st
-import time
-
-# Sync frame delay to prevent F5 flicker
-if 'initialized' not in st.session_state:
-    st.session_state['initialized'] = True
-    time.sleep(0.05)  # Allow WebSocket connection handshake to populate cookies in st.context
-    st.rerun()
-
 import pandas as pd
 import numpy as np
 import json
@@ -149,15 +141,19 @@ if 'user_id' not in st.session_state:
         cookie_user_id = st.context.cookies.get('user_id')
         cookie_username = st.context.cookies.get('username')
         
-        # 2. Fallback to component get if headers cookies aren't loaded yet
-        if not cookie_user_id or not cookie_username:
-            cookie_user_id = controller.get('user_id')
-            cookie_username = controller.get('username')
-            
         if cookie_user_id and cookie_username:
             st.session_state['user_id'] = int(cookie_user_id)
             st.session_state['username'] = cookie_username
-            st.rerun()
+            # No rerun needed here, since we are at the very beginning of the script
+            # and setting session_state directly will skip the auth check below.
+        else:
+            # 2. Fallback to component get if headers cookies aren't loaded yet
+            cookie_user_id = controller.get('user_id')
+            cookie_username = controller.get('username')
+            if cookie_user_id and cookie_username:
+                st.session_state['user_id'] = int(cookie_user_id)
+                st.session_state['username'] = cookie_username
+                st.rerun()
     except Exception:
         pass
 
