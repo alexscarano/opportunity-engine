@@ -27,6 +27,7 @@ __pycache__/
 !README.md
 !CUSTOMIZATION.md
 !.agents/AGENTS.md
+!docs/**/*.md
 !requirements.txt
 
 # Ignore sandbox files
