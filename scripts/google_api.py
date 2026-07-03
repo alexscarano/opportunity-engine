@@ -82,10 +82,15 @@ def authenticate_gemini(api_key=None, model_name=None):
             for m in genai.list_models():
                 if "generateContent" in m.supported_generation_methods:
                     available_models.append(m.name)
+            # Filter out deprecated models
+            available_models = [
+                m for m in available_models 
+                if not any(dep in m for dep in ["-2.0-", "-1.5-", "gemini-2.0", "gemini-1.5"])
+            ]
         except Exception as list_err:
             print(f"Warning: Could not list models: {list_err}. Defaulting to fallbacks.")
 
-        selected_model = model_name if model_name else "gemini-1.5-flash"  # Default fallback
+        selected_model = model_name if model_name else "gemini-3.5-flash"  # Default fallback
         
         if available_models:
             print(f"Available models: {available_models}")
@@ -102,7 +107,7 @@ def authenticate_gemini(api_key=None, model_name=None):
                     model_name = None
             
             if not model_name:
-                priority = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
+                priority = ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-3.1-flash-lite"]
                 found = False
                 for p_model in priority:
                     for a_model in available_models:

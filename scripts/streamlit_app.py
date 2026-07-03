@@ -24,19 +24,17 @@ def get_available_gemini_models(gemini_key):
     Lists available Gemini models that support generateContent and filters the top 5.
     """
     MODELS_INFO = {
-        "gemini-2.0-flash": "Gemini 2.0 Flash (Mais rápido e inteligente, recomendado)",
-        "gemini-1.5-flash": "Gemini 1.5 Flash (Rápido e econômico)",
-        "gemini-1.5-pro": "Gemini 1.5 Pro (Raciocínio complexo, ideal para relatórios detalhados)",
-        "gemini-2.0-flash-lite": "Gemini 2.0 Flash Lite (Ultra rápido e leve)",
-        "gemini-2.0-pro-exp": "Gemini 2.0 Pro Experimental (Máxima inteligência experimental)"
+        "gemini-3.5-flash": "Gemini 3.5 Flash (Mais rápido e inteligente, recomendado)",
+        "gemini-2.5-flash": "Gemini 2.5 Flash (Rápido e econômico)",
+        "gemini-2.5-pro": "Gemini 2.5 Pro (Raciocínio complexo, ideal para relatórios detalhados)",
+        "gemini-3.1-flash-lite": "Gemini 3.1 Flash Lite (Ultra rápido e leve)"
     }
     
     preferred_order = [
-        "gemini-2.0-flash",
-        "gemini-1.5-flash",
-        "gemini-1.5-pro",
-        "gemini-2.0-flash-lite",
-        "gemini-2.0-pro-exp"
+        "gemini-3.5-flash",
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-3.1-flash-lite"
     ]
     
     if not gemini_key:
@@ -50,6 +48,12 @@ def get_available_gemini_models(gemini_key):
             if "generateContent" in m.supported_generation_methods:
                 name = m.name.replace("models/", "")
                 api_models.append(name)
+        
+        # Filter out deprecated versions (1.5, 2.0)
+        api_models = [
+            m for m in api_models 
+            if not any(dep in m for dep in ["-2.0-", "-1.5-", "gemini-2.0", "gemini-1.5"])
+        ]
                 
         if api_models:
             filtered = [m for m in preferred_order if m in api_models]
