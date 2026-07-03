@@ -125,7 +125,22 @@ if os.path.dirname(__file__) not in sys.path:
     sys.path.append(os.path.dirname(__file__))
 
 from db import init_db, create_user, verify_user, add_user_project, get_user_projects, verify_project_ownership, delete_user_project
+from streamlit_cookies_controller import CookieController
+
 init_db()
+controller = CookieController()
+
+# Check cookies first to auto-login if session state is empty
+if 'user_id' not in st.session_state:
+    try:
+        cookie_user_id = controller.get('user_id')
+        cookie_username = controller.get('username')
+        if cookie_user_id and cookie_username:
+            st.session_state['user_id'] = int(cookie_user_id)
+            st.session_state['username'] = cookie_username
+            st.rerun()
+    except Exception:
+        pass
 
 # Authentication check
 if 'user_id' not in st.session_state:
@@ -148,6 +163,8 @@ if 'user_id' not in st.session_state:
                 if user_id:
                     st.session_state['user_id'] = user_id
                     st.session_state['username'] = username
+                    controller.set('user_id', str(user_id))
+                    controller.set('username', username)
                     st.success(f"Bem-vindo, {username}!")
                     st.rerun()
                 else:
@@ -161,6 +178,8 @@ if 'user_id' not in st.session_state:
                         user_id = create_user(username, password)
                         st.session_state['user_id'] = user_id
                         st.session_state['username'] = username
+                        controller.set('user_id', str(user_id))
+                        controller.set('username', username)
                         st.success(f"Cadastro realizado! Bem-vindo, {username}!")
                         st.rerun()
                     except ValueError as e:
@@ -201,6 +220,8 @@ if st.session_state.get("active_config_path"):
 # Sidebar user card & Logout
 st.sidebar.markdown(f"**Conectado como:** {st.session_state['username']}")
 if st.sidebar.button("Sair/Logout", use_container_width=True):
+    controller.remove('user_id')
+    controller.remove('username')
     del st.session_state['user_id']
     del st.session_state['username']
     if 'active_config_path' in st.session_state:
