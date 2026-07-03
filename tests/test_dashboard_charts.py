@@ -17,6 +17,7 @@ from dashboard_charts import (
     build_accuracy_chart,
     build_causal_line_chart,
     build_investment_bar_chart,
+    build_sessions_bar_chart,
 )
 
 
@@ -226,6 +227,18 @@ class TestBuildInvestmentBarChart(unittest.TestCase):
         self.assertEqual(list(fig.data[0].x), ["Pré-Evento", "Evento"])
         self.assertEqual(list(fig.data[0].y), [1000, 2000])
         self.assertEqual(list(fig.data[0].marker.color), ["gray", "green"])
+
+
+class TestBuildSessionsBarChart(unittest.TestCase):
+
+    def test_renames_categories_and_colors_bars(self):
+        sessions_bar_df = pd.DataFrame({"kpi": [100, 150]}, index=["Forecasted", "Actual"])
+        sessions_bar_df.index.name = "Category"
+
+        fig = build_sessions_bar_chart(sessions_bar_df, kpi_name="Cliques")
+        self.assertEqual(list(fig.data[0].x), ["Cliques Previsto", "Cliques Real"])
+        self.assertEqual(list(fig.data[0].y), [100, 150])
+        self.assertEqual(list(fig.data[0].marker.color), ["red", "black"])
 
 
 if __name__ == "__main__":

@@ -366,3 +366,28 @@ def build_investment_bar_chart(inv_bar_df):
         margin=dict(l=20, r=20, t=50, b=20),
     )
     return fig
+
+
+def build_sessions_bar_chart(sessions_bar_df, kpi_name="kpi"):
+    """Forecasted vs actual KPI totals, 2-bar comparison."""
+    labels = {
+        "Forecasted": f"{kpi_name} Previsto",
+        "Actual": f"{kpi_name} Real",
+    }
+    x_labels = [labels.get(idx, idx) for idx in sessions_bar_df.index]
+    colors = ["red" if idx == "Forecasted" else "black" for idx in sessions_bar_df.index]
+
+    fig = go.Figure(
+        go.Bar(
+            x=x_labels,
+            y=sessions_bar_df["kpi"],
+            marker=dict(color=colors),
+        )
+    )
+    fig.update_layout(
+        title=f"{kpi_name} Real vs. Previsto",
+        yaxis_title=f"Total de {kpi_name}",
+        showlegend=False,
+        margin=dict(l=20, r=20, t=50, b=20),
+    )
+    return fig
