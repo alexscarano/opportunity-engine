@@ -3,10 +3,12 @@ import re
 from src.utils import time_s
 from pathlib import Path
 
+
 def log(namespace: str, data: str) -> None:
     path = Path(f"./data/log/{namespace}_{time_s()}.log")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(data, encoding="utf-8")
+
 
 def translate_line(line: str) -> str:
     stripped = line.strip()
@@ -57,7 +59,9 @@ def translate_line(line: str) -> str:
     if "Analyzing" in line and "unique ad products" in line:
         match = re.search(r"Analyzing\s*(\d+)", line)
         n = match.group(1) if match else "vários"
-        return f"   - Analisando {n} canais de anúncio em busca de grandes alterações..."
+        return (
+            f"   - Analisando {n} canais de anúncio em busca de grandes alterações..."
+        )
     if "Detected events saved to:" in line:
         return f"   - Picos de investimento detectados salvos em: {line.split('saved to:')[-1].strip()}"
     if "Analyzing" in line and "candidates..." in line:
@@ -163,7 +167,9 @@ def translate_line(line: str) -> str:
     if "Incremental projection model training complete." in line:
         return "   - Treinamento do modelo de projeção incremental concluído."
     if "Analyzing historical data to find the optimal investment mix..." in line:
-        return "   - Analisando histórico para encontrar a melhor combinação de verbas..."
+        return (
+            "   - Analisando histórico para encontrar a melhor combinação de verbas..."
+        )
     if "No historical investment data to analyze for optimal mix." in line:
         return "   - Sem histórico de investimentos suficiente para calcular combinação ideal."
     if "Could not identify top efficiency weeks." in line:
@@ -185,6 +191,7 @@ def translate_line(line: str) -> str:
 
     return line
 
+
 class LogContext:
     def __init__(self, namespace: str):
         self.namespace = namespace
@@ -201,8 +208,10 @@ class LogContext:
             try:
                 self.stdout.write(translated + "\n")
             except UnicodeEncodeError:
-                enc = getattr(self.stdout, 'encoding', 'utf-8') or 'utf-8'
-                self.stdout.write((translated + "\n").encode(enc, errors='replace').decode(enc))
+                enc = getattr(self.stdout, "encoding", "utf-8") or "utf-8"
+                self.stdout.write(
+                    (translated + "\n").encode(enc, errors="replace").decode(enc)
+                )
             self.log_data.append(translated + "\n")
 
     def flush(self):
@@ -211,8 +220,8 @@ class LogContext:
             try:
                 self.stdout.write(translated)
             except UnicodeEncodeError:
-                enc = getattr(self.stdout, 'encoding', 'utf-8') or 'utf-8'
-                self.stdout.write(translated.encode(enc, errors='replace').decode(enc))
+                enc = getattr(self.stdout, "encoding", "utf-8") or "utf-8"
+                self.stdout.write(translated.encode(enc, errors="replace").decode(enc))
             self.log_data.append(translated)
             self.buffer = ""
         self.stdout.flush()
@@ -228,6 +237,7 @@ class LogContext:
         sys.stderr = self.stderr
         if exc_type:
             import traceback
+
             tb_str = "".join(traceback.format_exception(exc_type, exc_val, exc_tb))
             self.write(tb_str)
         log(self.namespace, "".join(self.log_data))

@@ -14,79 +14,116 @@ import pandas as pd
 import google.generativeai as genai
 from presentation import format_number
 
+
 def _get_image_as_base64(path):
     """Reads an image file and returns it as a base64 encoded string."""
     try:
         with open(path, "rb") as image_file:
-            return base64.b64encode(image_file.read()).decode('utf-8')
+            return base64.b64encode(image_file.read()).decode("utf-8")
     except FileNotFoundError:
-        print(f"   - WARNING: Image file not found at {path}. It will be omitted from the HTML report.")
+        print(
+            f"   - WARNING: Image file not found at {path}. It will be omitted from the HTML report."
+        )
         return None
     except Exception as e:
         print(f"   - WARNING: Could not read image file at {path}. Error: {e}")
         return None
 
-def _generate_full_report_narrative(gemini_client, results_data, config, market_analysis_df, csv_output_filename=None, correlation_matrix=None):
+
+def _generate_full_report_narrative(
+    gemini_client,
+    results_data,
+    config,
+    market_analysis_df,
+    csv_output_filename=None,
+    correlation_matrix=None,
+):
     """
     Generates the entire report narrative with a single, comprehensive prompt.
     """
     print("   - Generating full strategic narrative with Gemini...")
 
     # --- 1. Prepare all data for the prompt ---
-    avg_ticket = config.get('average_ticket', config.get('average_ticket_value', 0))
-    business_impact_sales = results_data.get('absolute_lift', 0) * config.get('conversion_rate_from_kpi_to_bo', 0)
-    
+    avg_ticket = config.get("average_ticket", config.get("average_ticket_value", 0))
+    business_impact_sales = results_data.get("absolute_lift", 0) * config.get(
+        "conversion_rate_from_kpi_to_bo", 0
+    )
+
     # --- Efficiency & Causal Calculations ---
-    inv_post = results_data.get('total_investment_post_period', 0)
-    inv_change_pct = results_data.get('investment_change_pct', 0)
-    baseline_inv_post = inv_post / (1 + (inv_change_pct / 100)) if inv_change_pct != -100 else 0
+    inv_post = results_data.get("total_investment_post_period", 0)
+    inv_change_pct = results_data.get("investment_change_pct", 0)
+    baseline_inv_post = (
+        inv_post / (1 + (inv_change_pct / 100)) if inv_change_pct != -100 else 0
+    )
     incremental_investment = inv_post - baseline_inv_post
-    
+
     # --- DYNAMIC LOGIC ---
     if avg_ticket > 0:
         business_impact_value = business_impact_sales * avg_ticket
         business_impact_label = "incremental_revenue"
-        business_impact_formatted_value = format_number(business_impact_value, currency=True)
+        business_impact_formatted_value = format_number(
+            business_impact_value, currency=True
+        )
         recommendation_kpi = "receita incremental"
-        
-        roi = (business_impact_value - incremental_investment) / incremental_investment if incremental_investment > 0 else 0
-        efficiency_metric = f"ROI Incremental: {roi:.2f}x" if incremental_investment > 0 else "N/A (Investimento Reduzido)"
+
+        roi = (
+            (business_impact_value - incremental_investment) / incremental_investment
+            if incremental_investment > 0
+            else 0
+        )
+        efficiency_metric = (
+            f"ROI Incremental: {roi:.2f}x"
+            if incremental_investment > 0
+            else "N/A (Investimento Reduzido)"
+        )
     else:
         business_impact_value = business_impact_sales
         business_impact_label = "incremental_orders"
         business_impact_formatted_value = f"{business_impact_value:,.0f} pedidos"
         recommendation_kpi = "pedidos incrementais"
-        
-        cpa = incremental_investment / business_impact_value if business_impact_value > 0 else 0
-        efficiency_metric = f"CPA Incremental: {format_number(cpa, currency=True)}" if business_impact_value > 0 else "N/A (S/ Lift Positivo)"
+
+        cpa = (
+            incremental_investment / business_impact_value
+            if business_impact_value > 0
+            else 0
+        )
+        efficiency_metric = (
+            f"CPA Incremental: {format_number(cpa, currency=True)}"
+            if business_impact_value > 0
+            else "N/A (S/ Lift Positivo)"
+        )
     # --- END DYNAMIC LOGIC ---
 
     # Consolidate data into a dictionary for easy serialization
     prompt_data = {
-        "client_name": config['advertiser_name'],
-        "client_industry": config.get('client_industry', 'their industry'),
-        "business_goal": config['client_business_goal'],
-        "kpi_name": config['primary_business_metric_name'],
+        "client_name": config["advertiser_name"],
+        "client_industry": config.get("client_industry", "their industry"),
+        "business_goal": config["client_business_goal"],
+        "kpi_name": config["primary_business_metric_name"],
         "causal_impact_results": {
-            "product_group": results_data['product_group'],
-            "is_significant": str(results_data['p_value'] < config['p_value_threshold']),
+            "product_group": results_data["product_group"],
+            "is_significant": str(
+                results_data["p_value"] < config["p_value_threshold"]
+            ),
             "p_value": f"{results_data['p_value']:.4f}",
             "investment_change_pct": f"{inv_change_pct:.1f}%",
-            "incremental_investment": format_number(incremental_investment, currency=True),
+            "incremental_investment": format_number(
+                incremental_investment, currency=True
+            ),
             "absolute_lift_kpi": f"{results_data['absolute_lift']:,.0f}",
             business_impact_label: business_impact_formatted_value,
-            "efficiency_metric": efficiency_metric
+            "efficiency_metric": efficiency_metric,
         },
         "model_validation_metrics": {
             "r_squared": f"{results_data.get('model_r_squared', 0):.2f}",
             "mae": f"{results_data.get('mae', 0):.2f}",
-            "mape": f"{results_data.get('mape', 0):.2f}%"
-        }
+            "mape": f"{results_data.get('mape', 0):.2f}%",
+        },
     }
 
     if csv_output_filename and os.path.exists(csv_output_filename):
         presentation_df = pd.read_csv(csv_output_filename)
-        prompt_data['presentation_data_csv'] = presentation_df.to_string()
+        prompt_data["presentation_data_csv"] = presentation_df.to_string()
 
     # --- 2. Define the JSON structure Gemini should return ---
     json_schema = f"""
@@ -108,7 +145,7 @@ def _generate_full_report_narrative(gemini_client, results_data, config, market_
 
     # --- 3. Construct the final prompt ---
     prompt = f"""
-    As a senior Google marketing strategist, your task is to create a comprehensive business report for {prompt_data['client_name']}.
+    As a senior Google marketing strategist, your task is to create a comprehensive business report for {prompt_data["client_name"]}.
     The report should focus on the "Value Delivered", proving the past impact of the marketing intervention and analyzing its efficiency.
 
     **CRITICAL INSTRUCTION: Your entire output must be in Brazilian Portuguese (pt-BR).**
@@ -138,38 +175,57 @@ A matriz de correlação entre o investimento diário total e os KPIs de negóci
 """
     try:
         response = gemini_client.generate_content(prompt)
-        cleaned_response_text = response.text.strip().replace('```json\n', '').replace('\n```', '')
+        cleaned_response_text = (
+            response.text.strip().replace("```json\n", "").replace("\n```", "")
+        )
         narrative = json.loads(cleaned_response_text)
         print("   - Full narrative generated and parsed successfully.")
         return narrative
     except Exception as e:
-        print(f"   - ERROR: Could not generate or parse the full narrative from Gemini. Details: {e}")
-        return json.loads(json_schema.replace('...', 'Error: Could not generate content.'))
+        print(
+            f"   - ERROR: Could not generate or parse the full narrative from Gemini. Details: {e}"
+        )
+        return json.loads(
+            json_schema.replace("...", "Error: Could not generate content.")
+        )
 
-def generate_markdown_report_from_narrative(narrative, results_data, config, output_filename):
+
+def generate_markdown_report_from_narrative(
+    narrative, results_data, config, output_filename
+):
     """
     Generates a clean, causal-impact focused RECOMMENDATIONS.md from the Gemini narrative.
     """
     print(f"   - Generating Markdown report to '{output_filename}'...")
-    
-    report_title = narrative.get('report_title', 'Recomendações de Investimento e Impacto Causal')
-    executive_verdict = narrative.get('executive_verdict', '')
-    detailed_analysis = narrative.get('detailed_analysis', '')
-    value_delivered = narrative.get('value_delivered', {}).get('narrative', '')
-    
+
+    report_title = narrative.get(
+        "report_title", "Recomendações de Investimento e Impacto Causal"
+    )
+    executive_verdict = narrative.get("executive_verdict", "")
+    detailed_analysis = narrative.get("detailed_analysis", "")
+    value_delivered = narrative.get("value_delivered", {}).get("narrative", "")
+
     # Calculate efficiency metrics
-    inv_post = results_data.get('total_investment_post_period', 0)
-    inv_change_pct = results_data.get('investment_change_pct', 0)
-    baseline_inv_post = inv_post / (1 + (inv_change_pct / 100)) if inv_change_pct != -100 else 0
+    inv_post = results_data.get("total_investment_post_period", 0)
+    inv_change_pct = results_data.get("investment_change_pct", 0)
+    baseline_inv_post = (
+        inv_post / (1 + (inv_change_pct / 100)) if inv_change_pct != -100 else 0
+    )
     incremental_investment = inv_post - baseline_inv_post
-    
-    avg_ticket = config.get('average_ticket', config.get('average_ticket_value', 0))
-    business_impact_sales = results_data.get('absolute_lift', 0) * config.get('conversion_rate_from_kpi_to_bo', 0)
-    
+
+    avg_ticket = config.get("average_ticket", config.get("average_ticket_value", 0))
+    business_impact_sales = results_data.get("absolute_lift", 0) * config.get(
+        "conversion_rate_from_kpi_to_bo", 0
+    )
+
     metrics_md = ""
     if avg_ticket > 0:
         business_impact_value = business_impact_sales * avg_ticket
-        roi = (business_impact_value - incremental_investment) / incremental_investment if incremental_investment > 0 else 0
+        roi = (
+            (business_impact_value - incremental_investment) / incremental_investment
+            if incremental_investment > 0
+            else 0
+        )
         metrics_md = (
             f"- **Investimento Incremental:** {format_number(incremental_investment, currency=True)}\n"
             f"- **Receita Incremental:** {format_number(business_impact_value, currency=True)}\n"
@@ -177,7 +233,11 @@ def generate_markdown_report_from_narrative(narrative, results_data, config, out
         )
     else:
         business_impact_value = business_impact_sales
-        cpa = incremental_investment / business_impact_value if business_impact_value > 0 else 0
+        cpa = (
+            incremental_investment / business_impact_value
+            if business_impact_value > 0
+            else 0
+        )
         metrics_md = (
             f"- **Investimento Incremental:** {format_number(incremental_investment, currency=True)}\n"
             f"- **Pedidos Incrementais:** {format_number(business_impact_value)}\n"
@@ -185,10 +245,12 @@ def generate_markdown_report_from_narrative(narrative, results_data, config, out
         )
 
     next_steps_md = "## Próximos Passos Estratégicos\n\n"
-    if narrative.get('next_steps') and isinstance(narrative['next_steps'], list):
-        for item in narrative['next_steps']:
+    if narrative.get("next_steps") and isinstance(narrative["next_steps"], list):
+        for item in narrative["next_steps"]:
             if isinstance(item, dict):
-                next_steps_md += f"### {item.get('step', '')}\n{item.get('description', '')}\n\n"
+                next_steps_md += (
+                    f"### {item.get('step', '')}\n{item.get('description', '')}\n\n"
+                )
 
     md_content = f"""# {report_title}
 
@@ -207,60 +269,98 @@ def generate_markdown_report_from_narrative(narrative, results_data, config, out
 {next_steps_md}
 """
     try:
-        with open(output_filename, 'w', encoding='utf-8') as f:
+        with open(output_filename, "w", encoding="utf-8") as f:
             f.write(md_content)
         print("   - Markdown report generated successfully.")
     except Exception as e:
         print(f"   - ERROR: Could not write Markdown report to file. Details: {e}")
 
-def generate_html_report(gemini_client, results_data, config, image_paths, output_filename, market_analysis_df, causal_impact_df, csv_output_filename=None, correlation_matrix=None):
+
+def generate_html_report(
+    gemini_client,
+    results_data,
+    config,
+    image_paths,
+    output_filename,
+    market_analysis_df,
+    causal_impact_df,
+    csv_output_filename=None,
+    correlation_matrix=None,
+):
     """
     Generates a self-contained HTML report using the AI-generated narrative for event impact.
     """
     print(f"   - Assembling Gemini HTML report to '{output_filename}'...")
 
     # --- 1. Image Embedding ---
-    image_b64s = {key: _get_image_as_base64(path) for key, path in image_paths.items() if path}
+    image_b64s = {
+        key: _get_image_as_base64(path) for key, path in image_paths.items() if path
+    }
 
     # --- 2. AI Narrative Generation ---
-    narrative = _generate_full_report_narrative(gemini_client, results_data, config, market_analysis_df, csv_output_filename=csv_output_filename, correlation_matrix=correlation_matrix)
+    narrative = _generate_full_report_narrative(
+        gemini_client,
+        results_data,
+        config,
+        market_analysis_df,
+        csv_output_filename=csv_output_filename,
+        correlation_matrix=correlation_matrix,
+    )
 
     # --- 3. Data Calculation for Tables ---
-    avg_ticket = config.get('average_ticket', config.get('average_ticket_value', 0))
-    business_impact_sales = results_data.get('absolute_lift', 0) * config.get('conversion_rate_from_kpi_to_bo', 0)
+    avg_ticket = config.get("average_ticket", config.get("average_ticket_value", 0))
+    business_impact_sales = results_data.get("absolute_lift", 0) * config.get(
+        "conversion_rate_from_kpi_to_bo", 0
+    )
     business_impact_revenue = business_impact_sales * avg_ticket
 
-    inv_post = results_data.get('total_investment_post_period', 0)
-    inv_change_pct = results_data.get('investment_change_pct', 0)
-    baseline_inv_post = inv_post / (1 + (inv_change_pct / 100)) if inv_change_pct != -100 else 0
+    inv_post = results_data.get("total_investment_post_period", 0)
+    inv_change_pct = results_data.get("investment_change_pct", 0)
+    baseline_inv_post = (
+        inv_post / (1 + (inv_change_pct / 100)) if inv_change_pct != -100 else 0
+    )
     incremental_investment = inv_post - baseline_inv_post
 
     incremental_investment_str = format_number(incremental_investment, currency=True)
     if avg_ticket > 0:
         business_impact_label_str = "Receita"
         business_impact_str = format_number(business_impact_revenue, currency=True)
-        roi = (business_impact_revenue - incremental_investment) / incremental_investment if incremental_investment > 0 else 0
+        roi = (
+            (business_impact_revenue - incremental_investment) / incremental_investment
+            if incremental_investment > 0
+            else 0
+        )
         efficiency_label = "ROI Incremental"
         efficiency_val = f"{roi:.2f}x" if incremental_investment > 0 else "N/A"
     else:
         business_impact_label_str = "Pedidos"
         business_impact_str = format_number(business_impact_sales)
-        cpa = incremental_investment / business_impact_sales if business_impact_sales > 0 else 0
+        cpa = (
+            incremental_investment / business_impact_sales
+            if business_impact_sales > 0
+            else 0
+        )
         efficiency_label = "CPA Incremental"
-        efficiency_val = format_number(cpa, currency=True) if business_impact_sales > 0 else "N/A"
+        efficiency_val = (
+            format_number(cpa, currency=True) if business_impact_sales > 0 else "N/A"
+        )
 
     # --- 4. Build HTML Components ---
 
     # Next Steps List
     next_steps_html = ""
-    if narrative.get('next_steps') and isinstance(narrative['next_steps'], list):
-        for item in narrative['next_steps']:
+    if narrative.get("next_steps") and isinstance(narrative["next_steps"], list):
+        for item in narrative["next_steps"]:
             if isinstance(item, dict):
                 next_steps_html += f"<li><strong>{item.get('step', '')}:</strong> {item.get('description', '')}</li>"
 
     # Generate Markdown Report directly
-    markdown_filename = os.path.join(os.path.dirname(output_filename), "RECOMMENDATIONS.md")
-    generate_markdown_report_from_narrative(narrative, results_data, config, markdown_filename)
+    markdown_filename = os.path.join(
+        os.path.dirname(output_filename), "RECOMMENDATIONS.md"
+    )
+    generate_markdown_report_from_narrative(
+        narrative, results_data, config, markdown_filename
+    )
 
     # --- 5. Final HTML Assembly ---
     html_template = """
@@ -351,61 +451,76 @@ def generate_html_report(gemini_client, results_data, config, image_paths, outpu
     </body>
     </html>
     """.format(
-        report_title=html.escape(narrative.get('report_title', 'Análise de Impacto Causal')),
-        executive_verdict=narrative.get('executive_verdict', ''),
-        detailed_analysis=narrative.get('detailed_analysis', ''),
-        value_delivered_narrative=narrative.get('value_delivered', {}).get('narrative', ''),
-        methodology_narrative=narrative.get('value_delivered', {}).get('methodology_narrative', ''),
+        report_title=html.escape(
+            narrative.get("report_title", "Análise de Impacto Causal")
+        ),
+        executive_verdict=narrative.get("executive_verdict", ""),
+        detailed_analysis=narrative.get("detailed_analysis", ""),
+        value_delivered_narrative=narrative.get("value_delivered", {}).get(
+            "narrative", ""
+        ),
+        methodology_narrative=narrative.get("value_delivered", {}).get(
+            "methodology_narrative", ""
+        ),
         next_steps_html=next_steps_html,
         incremental_investment_str=incremental_investment_str,
         business_impact_label_str=business_impact_label_str,
         business_impact_str=business_impact_str,
         efficiency_label=efficiency_label,
         efficiency_val=efficiency_val,
-        line_img=image_b64s.get('line', ''),
-        investment_img=image_b64s.get('investment', ''),
-        sessions_img=image_b64s.get('sessions', ''),
-        accuracy_img=image_b64s.get('accuracy', ''),
-        r_squared=results_data.get('model_r_squared', 0),
-        r_squared_pct=results_data.get('model_r_squared', 0),
-        p_value=results_data.get('p_value', 0),
-        mape=results_data.get('mape', 0),
+        line_img=image_b64s.get("line", ""),
+        investment_img=image_b64s.get("investment", ""),
+        sessions_img=image_b64s.get("sessions", ""),
+        accuracy_img=image_b64s.get("accuracy", ""),
+        r_squared=results_data.get("model_r_squared", 0),
+        r_squared_pct=results_data.get("model_r_squared", 0),
+        p_value=results_data.get("p_value", 0),
+        mape=results_data.get("mape", 0),
         avg_ticket_formatted=format_number(avg_ticket, currency=True),
-        conversion_rate=config.get('conversion_rate_from_kpi_to_bo', 0),
-        p_value_threshold=config.get('p_value_threshold', 0.05)
+        conversion_rate=config.get("conversion_rate_from_kpi_to_bo", 0),
+        p_value_threshold=config.get("p_value_threshold", 0.05),
     )
 
     try:
-        with open(output_filename, 'w', encoding='utf-8') as f:
+        with open(output_filename, "w", encoding="utf-8") as f:
             f.write(html_template)
         print(f"   - Gemini HTML report saved successfully.")
     except Exception as e:
         print(f"   - ERROR: Could not write HTML report to file. Details: {e}")
 
 
-def generate_global_gemini_report(gemini_client, config, scenarios=None, total_investment=None, kpi_projections=None):
+def generate_global_gemini_report(
+    gemini_client, config, scenarios=None, total_investment=None, kpi_projections=None
+):
     """
     Generates a dedicated Gemini report for the global saturation analysis.
     """
-    print("\n" + "="*50 + "\nGenerating Global Gemini Report...\n" + "="*50)
-    
-    advertiser_name = config.get('advertiser_name', 'default_advertiser')
-    global_output_dir = os.path.join(os.getcwd(), config['output_directory'], advertiser_name, 'global_saturation_analysis')
-    
+    print("\n" + "=" * 50 + "\nGenerating Global Gemini Report...\n" + "=" * 50)
+
+    advertiser_name = config.get("advertiser_name", "default_advertiser")
+    global_output_dir = os.path.join(
+        os.getcwd(),
+        config["output_directory"],
+        advertiser_name,
+        "global_saturation_analysis",
+    )
+
     # --- 1. Define paths and read artifacts ---
-    markdown_path = os.path.join(global_output_dir, 'SATURATION_CURVE.md')
-    response_curve_path = os.path.join(global_output_dir, 'combined_all_channels_saturation_curve.png')
-    
+    markdown_path = os.path.join(global_output_dir, "SATURATION_CURVE.md")
+    response_curve_path = os.path.join(
+        global_output_dir, "combined_all_channels_saturation_curve.png"
+    )
+
     try:
-        with open(markdown_path, 'r', encoding='utf-8') as f:
+        with open(markdown_path, "r", encoding="utf-8") as f:
             markdown_content = f.read()
     except FileNotFoundError:
-        print(f"   - ERROR: Could not find SATURATION_CURVE.md at {markdown_path}. Halting global report generation.")
+        print(
+            f"   - ERROR: Could not find SATURATION_CURVE.md at {markdown_path}. Halting global report generation."
+        )
         return
 
-    image_b64s = {
-        "response_curve": _get_image_as_base64(response_curve_path)
-    }
+    image_b64s = {"response_curve": _get_image_as_base64(response_curve_path)}
 
     # --- 2. Define the JSON structure for Gemini ---
     json_schema = """
@@ -469,25 +584,33 @@ def generate_global_gemini_report(gemini_client, config, scenarios=None, total_i
     try:
         model = genai.GenerativeModel(gemini_client.model_name)
         response = gemini_client.generate_content(prompt)
-        cleaned_response_text = response.text.strip().replace('```json\n', '').replace('\n```', '')
+        cleaned_response_text = (
+            response.text.strip().replace("```json\n", "").replace("\n```", "")
+        )
         narrative = json.loads(cleaned_response_text)
         print("   - Global narrative generated and parsed successfully.")
-        
+
         # NEW: Save the JSON payload so the Streamlit UI can render the insights without re-running Gemini
-        json_output_path = os.path.join(global_output_dir, 'global_narrative.json')
-        with open(json_output_path, 'w', encoding='utf-8') as f:
+        json_output_path = os.path.join(global_output_dir, "global_narrative.json")
+        with open(json_output_path, "w", encoding="utf-8") as f:
             json.dump(narrative, f, ensure_ascii=False, indent=4)
-            
+
     except Exception as e:
-        print(f"   - ERROR: Could not generate or parse the global narrative from Gemini. Details: {e}")
+        print(
+            f"   - ERROR: Could not generate or parse the global narrative from Gemini. Details: {e}"
+        )
         return
 
     # --- 5. Assemble HTML Report ---
-    output_filename = os.path.join(global_output_dir, 'global_report.html')
-    
+    output_filename = os.path.join(global_output_dir, "global_report.html")
+
     # --- New: Dynamically build the scenarios analysis table ---
-    scenarios_analysis_html = '<table class="scenarios-table"><tr><th>Cenário</th><th>Análise</th></tr>'
-    scenario_table_data = narrative.get('analysis_of_scenarios', {}).get('scenario_table', [])
+    scenarios_analysis_html = (
+        '<table class="scenarios-table"><tr><th>Cenário</th><th>Análise</th></tr>'
+    )
+    scenario_table_data = narrative.get("analysis_of_scenarios", {}).get(
+        "scenario_table", []
+    )
     for row in scenario_table_data:
         scenarios_analysis_html += f"<tr><td><strong>{row.get('scenario_name', '')}</strong></td><td>{row.get('analysis', '')}</td></tr>"
     scenarios_analysis_html += "</table>"
@@ -497,55 +620,77 @@ def generate_global_gemini_report(gemini_client, config, scenarios=None, total_i
     channel_mix_html = ""
     if scenarios:
         for scen in scenarios:
-            title = scen['title']
-            
+            title = scen["title"]
+
             channel_mix_html += f"<h3>{title}</h3>"
-            if 'description' in scen:
+            if "description" in scen:
                 channel_mix_html += f"<p>{scen['description']}</p>"
-                
+
             header = "<th>Canal</th><th>Média Histórica</th><th>Pico de Eficiência</th><th>Modelo de Elasticidade</th>"
-            
+
             rows = ""
-            all_channels = sorted(list(set(ch for split in scen['splits'].values() for ch in split.keys())))
-            
+            all_channels = sorted(
+                list(
+                    set(ch for split in scen["splits"].values() for ch in split.keys())
+                )
+            )
+
             for channel in all_channels:
                 row = f"<tr><td><strong>{channel}</strong></td>"
-                for split_name in ['Média Histórica', 'Pico de Eficiência', 'Modelo de Elasticidade']:
-                    split = scen['splits'][split_name]
+                for split_name in [
+                    "Média Histórica",
+                    "Pico de Eficiência",
+                    "Modelo de Elasticidade",
+                ]:
+                    split = scen["splits"][split_name]
                     investment = split.get(channel, 0)
                     total_investment = sum(split.values())
-                    percentage = (investment / total_investment * 100) if total_investment > 0 else 0
+                    percentage = (
+                        (investment / total_investment * 100)
+                        if total_investment > 0
+                        else 0
+                    )
                     row += f"<td>{format_number(investment, currency=True)} ({percentage:.2f}%)</td>"
                 row += "</tr>"
                 rows += row
-                
+
             total_row = "<tr><td><strong>Total</strong></td>"
-            for split_name in ['Média Histórica', 'Pico de Eficiência', 'Modelo de Elasticidade']:
-                split = scen['splits'][split_name]
+            for split_name in [
+                "Média Histórica",
+                "Pico de Eficiência",
+                "Modelo de Elasticidade",
+            ]:
+                split = scen["splits"][split_name]
                 total_row += f"<td><strong>{format_number(sum(split.values()), currency=True)} (100.00%)</strong></td>"
             total_row += "</tr>"
-            
+
             # --- NEW: Append KPIs and CPA rows to HTML table ---
-            projected_kpis = scen.get('projected_kpis', {})
-            total_inv = scen.get('total_investment', 0)
+            projected_kpis = scen.get("projected_kpis", {})
+            total_inv = scen.get("total_investment", 0)
             kpi_cpa_rows = ""
-            
+
             if projected_kpis:
-                avg_ticket = config.get('average_ticket', config.get('average_ticket_value', 0))
-                conv_rate = config.get('conversion_rate_from_kpi_to_bo', 0)
-                
+                avg_ticket = config.get(
+                    "average_ticket", config.get("average_ticket_value", 0)
+                )
+                conv_rate = config.get("conversion_rate_from_kpi_to_bo", 0)
+
                 if avg_ticket > 0:
                     kpi_row = "<tr><td><strong>Projeção de Receita</strong></td>"
                     cpa_row = "<tr><td><strong>ROAS</strong></td>"
                 else:
-                    kpi_label = config.get('primary_business_metric_name', 'KPIs')
+                    kpi_label = config.get("primary_business_metric_name", "KPIs")
                     kpi_row = f"<tr><td><strong>Projeção de {kpi_label}</strong></td>"
                     cpa_row = "<tr><td><strong>CPA</strong></td>"
-                
-                for split_name in ['Média Histórica', 'Pico de Eficiência', 'Modelo de Elasticidade']:
+
+                for split_name in [
+                    "Média Histórica",
+                    "Pico de Eficiência",
+                    "Modelo de Elasticidade",
+                ]:
                     raw_kpi = projected_kpis.get(split_name, 0)
                     actual_kpi = raw_kpi * conv_rate if conv_rate > 0 else raw_kpi
-                    
+
                     if avg_ticket > 0:
                         revenue = actual_kpi * avg_ticket
                         roas = revenue / total_inv if total_inv > 0 else 0
@@ -553,13 +698,15 @@ def generate_global_gemini_report(gemini_client, config, scenarios=None, total_i
                         cpa_row += f"<td><strong>{roas:.2f}</strong></td>"
                     else:
                         cpa_val = total_inv / actual_kpi if actual_kpi > 0 else 0
-                        kpi_row += f"<td><strong>{format_number(actual_kpi)}</strong></td>"
+                        kpi_row += (
+                            f"<td><strong>{format_number(actual_kpi)}</strong></td>"
+                        )
                         cpa_row += f"<td><strong>{format_number(cpa_val, currency=True)}</strong></td>"
-                
+
                 kpi_row += "</tr>"
                 cpa_row += "</tr>"
                 kpi_cpa_rows = kpi_row + cpa_row
-            
+
             channel_mix_html += f"""
             <table class="scenarios-table">
                 <thead><tr>{header}</tr></thead>
@@ -592,76 +739,92 @@ def generate_global_gemini_report(gemini_client, config, scenarios=None, total_i
     # --- New: Build Summary Table ---
     summary_table_html = ""
     if kpi_projections:
-        avg_ticket = config.get('average_ticket', config.get('average_ticket_value', 0))
-        conv_rate = config.get('conversion_rate_from_kpi_to_bo', 0)
-        
+        avg_ticket = config.get("average_ticket", config.get("average_ticket_value", 0))
+        conv_rate = config.get("conversion_rate_from_kpi_to_bo", 0)
+
         summary_table_html += '<div class="section">'
-        summary_table_html += '<h2>Resumo dos Cenários Projetados</h2>'
-        summary_table_html += '<p>A tabela abaixo apresenta os resultados projetados de quatro cenários de investimento chave, assumindo que seus respectivos mix recomendados sejam aplicados:</p>'
-        summary_table_html += '<ul>'
-        summary_table_html += '<li><strong>Cenário Atual (Média Histórica):</strong> Mantém o nível de investimento e o mix idênticos às médias observadas.</li>'
-        summary_table_html += '<li><strong>Cenário Otimizado (Pico de Eficiência):</strong> Escala o investimento total para o ponto de maior eficiência detectado e usa o mix dos melhores períodos.</li>'
-        summary_table_html += '<li><strong>Cenário Estratégico (Modelo de Elasticidade):</strong> Expande o orçamento até o limite ótimo de saturação calculado pelo modelo iterativo.</li>'
-        summary_table_html += '<li><strong>Realocação Estratégica (Mesmo Orçamento):</strong> Mantém o investimento atual, mas redistribui a verba segundo o Modelo de Elasticidade para ganho puro de eficiência.</li>'
-        summary_table_html += '</ul>'
+        summary_table_html += "<h2>Resumo dos Cenários Projetados</h2>"
+        summary_table_html += "<p>A tabela abaixo apresenta os resultados projetados de quatro cenários de investimento chave, assumindo que seus respectivos mix recomendados sejam aplicados:</p>"
+        summary_table_html += "<ul>"
+        summary_table_html += "<li><strong>Cenário Atual (Média Histórica):</strong> Mantém o nível de investimento e o mix idênticos às médias observadas.</li>"
+        summary_table_html += "<li><strong>Cenário Otimizado (Pico de Eficiência):</strong> Escala o investimento total para o ponto de maior eficiência detectado e usa o mix dos melhores períodos.</li>"
+        summary_table_html += "<li><strong>Cenário Estratégico (Modelo de Elasticidade):</strong> Expande o orçamento até o limite ótimo de saturação calculado pelo modelo iterativo.</li>"
+        summary_table_html += "<li><strong>Realocação Estratégica (Mesmo Orçamento):</strong> Mantém o investimento atual, mas redistribui a verba segundo o Modelo de Elasticidade para ganho puro de eficiência.</li>"
+        summary_table_html += "</ul>"
         summary_table_html += '<table class="scenarios-table">'
-        
+
         if avg_ticket > 0:
-            header = '<thead><tr><th>Cenário</th><th>Investimento Mensal</th><th>Receita Projetada</th><th>Investimento Incremental</th><th>Receita Incremental</th><th>ROI Incremental</th></tr></thead><tbody>'
+            header = "<thead><tr><th>Cenário</th><th>Investimento Mensal</th><th>Receita Projetada</th><th>Investimento Incremental</th><th>Receita Incremental</th><th>ROI Incremental</th></tr></thead><tbody>"
         else:
-            kpi_label = config.get('primary_business_metric_name', 'KPIs')
-            header = f'<thead><tr><th>Cenário</th><th>Investimento Mensal</th><th>Projeção de {kpi_label}</th><th>Investimento Incremental</th><th>{kpi_label} Incrementais</th><th>Custo por {kpi_label} Incremental</th></tr></thead><tbody>'
-        
+            kpi_label = config.get("primary_business_metric_name", "KPIs")
+            header = f"<thead><tr><th>Cenário</th><th>Investimento Mensal</th><th>Projeção de {kpi_label}</th><th>Investimento Incremental</th><th>{kpi_label} Incrementais</th><th>Custo por {kpi_label} Incremental</th></tr></thead><tbody>"
+
         summary_table_html += header
-        
+
         scenario_map = [
-            ('Cenário Atual (Média Histórica)', 'current'),
-            ('Cenário Otimizado (Pico de Eficiência)', 'optimized'),
-            ('Cenário Estratégico (Modelo de Elasticidade)', 'strategic'),
-            ('Realocação Estratégica (Mesmo Orçamento)', 'reallocation')
+            ("Cenário Atual (Média Histórica)", "current"),
+            ("Cenário Otimizado (Pico de Eficiência)", "optimized"),
+            ("Cenário Estratégico (Modelo de Elasticidade)", "strategic"),
+            ("Realocação Estratégica (Mesmo Orçamento)", "reallocation"),
         ]
-        
-        current_point = kpi_projections.get('current')
-        current_inv = current_point.get('Daily_Investment', 0) * 30 if current_point else 0
-        
+
+        current_point = kpi_projections.get("current")
+        current_inv = (
+            current_point.get("Daily_Investment", 0) * 30 if current_point else 0
+        )
+
         for title, key in scenario_map:
             point = kpi_projections.get(key)
             if point:
-                inv = point.get('Daily_Investment', 0) * 30
-                inc_inv = inv - current_inv if key != 'current' else 0
-                
-                kpi = point.get('Projected_Total_KPIs', 0) * 30
-                inc_kpi = point.get('Incremental_KPI', 0) * 30 if key != 'current' else 0
-                
+                inv = point.get("Daily_Investment", 0) * 30
+                inc_inv = inv - current_inv if key != "current" else 0
+
+                kpi = point.get("Projected_Total_KPIs", 0) * 30
+                inc_kpi = (
+                    point.get("Incremental_KPI", 0) * 30 if key != "current" else 0
+                )
+
                 orders = kpi * conv_rate if conv_rate > 0 else kpi
                 inc_orders = inc_kpi * conv_rate if conv_rate > 0 else inc_kpi
-                
+
                 inv_str = format_number(inv, currency=True)
-                inc_inv_str = format_number(inc_inv, currency=True) if key != 'current' else '-'
-                
-                row_style = ' style="background-color: #e8f0fe;"' if key == 'strategic' else ''
-                
+                inc_inv_str = (
+                    format_number(inc_inv, currency=True) if key != "current" else "-"
+                )
+
+                row_style = (
+                    ' style="background-color: #e8f0fe;"' if key == "strategic" else ""
+                )
+
                 if avg_ticket > 0:
                     revenue = orders * avg_ticket
                     inc_revenue = inc_orders * avg_ticket
                     roi = (inc_revenue - inc_inv) / inc_inv if inc_inv > 0 else 0
-                    
+
                     rev_str = format_number(revenue, currency=True)
-                    inc_rev_str = format_number(inc_revenue, currency=True) if key != 'current' else '-'
-                    roi_str = f"{roi:.2f}" if key != 'current' and inc_inv > 0 else '-'
-                    
+                    inc_rev_str = (
+                        format_number(inc_revenue, currency=True)
+                        if key != "current"
+                        else "-"
+                    )
+                    roi_str = f"{roi:.2f}" if key != "current" and inc_inv > 0 else "-"
+
                     summary_table_html += f"<tr{row_style}><td><strong>{title}</strong></td><td>{inv_str}</td><td>{rev_str}</td><td>{inc_inv_str}</td><td>{inc_rev_str}</td><td>{roi_str}</td></tr>"
                 else:
                     kpi_str = format_number(orders)
-                    inc_kpi_str = format_number(inc_orders) if key != 'current' else '-'
-                    
+                    inc_kpi_str = format_number(inc_orders) if key != "current" else "-"
+
                     cpa_qty = inc_orders
                     cpa = inc_inv / cpa_qty if cpa_qty > 0 else 0
-                    cpa_str = format_number(cpa, currency=True) if key != 'current' and cpa_qty > 0 else '-'
-                    
+                    cpa_str = (
+                        format_number(cpa, currency=True)
+                        if key != "current" and cpa_qty > 0
+                        else "-"
+                    )
+
                     summary_table_html += f"<tr{row_style}><td><strong>{title}</strong></td><td>{inv_str}</td><td>{kpi_str}</td><td>{inc_inv_str}</td><td>{inc_kpi_str}</td><td>{cpa_str}</td></tr>"
-        
-        summary_table_html += '</tbody></table></div>'
+
+        summary_table_html += "</tbody></table></div>"
     # --- End New ---
 
     html_template = """
@@ -711,23 +874,36 @@ def generate_global_gemini_report(gemini_client, config, scenarios=None, total_i
     </body>
     </html>
     """.format(
-        report_title=html.escape(narrative.get('report_title', f'Análise Estratégica Global para {advertiser_name}')),
+        report_title=html.escape(
+            narrative.get(
+                "report_title", f"Análise Estratégica Global para {advertiser_name}"
+            )
+        ),
         summary_table_html=summary_table_html,
-        executive_summary=narrative.get('executive_summary', ''),
-        scenarios_intro=narrative.get('analysis_of_scenarios', {}).get('introduction', ''),
+        executive_summary=narrative.get("executive_summary", ""),
+        scenarios_intro=narrative.get("analysis_of_scenarios", {}).get(
+            "introduction", ""
+        ),
         scenarios_analysis_html=scenarios_analysis_html,
         channel_mix_html=channel_mix_html,
-        recommendation_1=narrative.get('strategic_recommendations', [{}])[0].get('recommendation', ''),
-        recommendation_2=narrative.get('strategic_recommendations', [{}, {}])[1].get('recommendation', ''),
-        response_curve_img=image_b64s.get('response_curve', ''),
-        css_styles=css_styles
+        recommendation_1=narrative.get("strategic_recommendations", [{}])[0].get(
+            "recommendation", ""
+        ),
+        recommendation_2=narrative.get("strategic_recommendations", [{}, {}])[1].get(
+            "recommendation", ""
+        ),
+        response_curve_img=image_b64s.get("response_curve", ""),
+        css_styles=css_styles,
     )
 
     try:
-        with open(output_filename, 'w', encoding='utf-8') as f:
+        with open(output_filename, "w", encoding="utf-8") as f:
             f.write(html_template)
-        print(f"   - Global Gemini HTML report saved successfully to: {output_filename}")
+        print(
+            f"   - Global Gemini HTML report saved successfully to: {output_filename}"
+        )
     except Exception as e:
         import traceback
+
         print(f"   - ERROR: Could not write global HTML report to file. Details: {e}")
         traceback.print_exc()
