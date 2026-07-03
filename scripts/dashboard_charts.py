@@ -123,3 +123,58 @@ def build_revenue_roi_curve(df_plot, kpi_name="kpi"):
         margin=dict(l=20, r=20, t=50, b=20),
     )
     return fig
+
+
+def build_channel_mix_evolution(df_plot, baseline_monthly_inv=None, optimal_monthly_inv=None):
+    """100%-stacked area of each channel's Strategic-mix share vs Monthly_Investment."""
+    strategic_cols = [
+        c for c in df_plot.columns if c.startswith("Spend_") and c.endswith("_Strategic")
+    ]
+    channel_names = [c.replace("Spend_", "").replace("_Strategic", "") for c in strategic_cols]
+
+    totals = df_plot[strategic_cols].sum(axis=1)
+    shares = df_plot[strategic_cols].div(totals.replace(0, np.nan), axis=0).fillna(0) * 100
+    shares.columns = channel_names
+
+    order = shares.mean().sort_values(ascending=False).index
+    palette = px.colors.qualitative.Plotly
+
+    fig = go.Figure()
+    for i, channel in enumerate(order):
+        fig.add_trace(
+            go.Scatter(
+                x=df_plot["Monthly_Investment"],
+                y=shares[channel],
+                mode="lines",
+                name=channel,
+                stackgroup="one",
+                line=dict(width=0.5, color=palette[i % len(palette)]),
+                hovertemplate=f"<b>{channel}:</b> %{{y:.1f}}%<extra></extra>",
+            )
+        )
+
+    if baseline_monthly_inv:
+        fig.add_vline(
+            x=baseline_monthly_inv,
+            line_dash="dash",
+            line_color="green",
+            annotation_text="Base Histórica",
+        )
+    if optimal_monthly_inv:
+        fig.add_vline(
+            x=optimal_monthly_inv,
+            line_dash="dot",
+            line_color="red",
+            annotation_text="Ponto Ótimo",
+        )
+
+    fig.update_layout(
+        xaxis_title="Investimento Mensal",
+        yaxis_title="Participação no Mix (%)",
+        xaxis=dict(tickformat=".2s"),
+        yaxis=dict(range=[0, 100]),
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="top", y=1.2, xanchor="center", x=0.5),
+        margin=dict(l=20, r=20, t=50, b=20),
+    )
+    return fig

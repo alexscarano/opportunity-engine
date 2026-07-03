@@ -8,7 +8,7 @@ sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "scripts"))
 )
 
-from dashboard_charts import build_icpa_curve, build_revenue_roi_curve
+from dashboard_charts import build_icpa_curve, build_revenue_roi_curve, build_channel_mix_evolution
 
 
 class TestBuildIcpaCurve(unittest.TestCase):
@@ -81,6 +81,34 @@ class TestBuildRevenueRoiCurve(unittest.TestCase):
         self.assertEqual(list(fig.data[1].y), [2.5, 3.0])
         self.assertEqual(fig.layout.yaxis2.overlaying, "y")
         self.assertEqual(fig.layout.yaxis2.side, "right")
+
+
+class TestBuildChannelMixEvolution(unittest.TestCase):
+
+    def test_stacks_shares_ordered_by_average_share_descending(self):
+        df_plot = pd.DataFrame({
+            "Monthly_Investment": [1000, 2000],
+            "Spend_GOOGLE_Strategic": [700, 1600],
+            "Spend_META_Strategic": [300, 400],
+        })
+        fig = build_channel_mix_evolution(
+            df_plot, baseline_monthly_inv=1000, optimal_monthly_inv=2000
+        )
+        names = [trace.name for trace in fig.data]
+        self.assertEqual(names, ["GOOGLE", "META"])
+        self.assertEqual(list(fig.data[0].y), [70.0, 80.0])
+        self.assertEqual(list(fig.data[1].y), [30.0, 20.0])
+        self.assertEqual(fig.data[0].stackgroup, "one")
+
+    def test_adds_baseline_and_optimal_vlines(self):
+        df_plot = pd.DataFrame({
+            "Monthly_Investment": [1000, 2000],
+            "Spend_GOOGLE_Strategic": [1000, 2000],
+        })
+        fig = build_channel_mix_evolution(
+            df_plot, baseline_monthly_inv=1000, optimal_monthly_inv=2000
+        )
+        self.assertEqual(len(fig.layout.shapes), 2)
 
 
 if __name__ == "__main__":
