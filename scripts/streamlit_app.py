@@ -131,14 +131,13 @@ init_db()
 if 'user_id' not in st.session_state:
     st.markdown("""
         <div style="text-align: center; margin-top: 50px; margin-bottom: 20px;">
-            <h1 style="color: #1a73e8; font-size: 2.5rem; font-weight: 700;">Max Impact Engine</h1>
-            <p style="color: #5f6368; font-size: 1.1rem;">Por favor, faça o login para acessar a plataforma.</p>
+            <h1 style="color: #1a73e8; font-size: 2.5rem; font-weight: 700;">Opportunity Engine</h1>
+            <p style="color: #5f6368; font-size: 1.1rem;">Por favor, faça o login para acessar a plataforma de Otimização de Oportunidades.</p>
         </div>
     """, unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
         auth_mode = st.radio("Selecione a ação", ["Login", "Cadastrar Novo Usuário"])
         username = st.text_input("Usuário", key="login_username")
         password = st.text_input("Senha", type="password", key="login_password")
@@ -163,8 +162,8 @@ if 'user_id' not in st.session_state:
                         st.success("Usuário cadastrado com sucesso! Faça o login.")
                     except ValueError as e:
                         st.error(str(e))
-        st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
+
 
 st.title("Max Impact Engine (Total Opportunity)")
 st.markdown(
