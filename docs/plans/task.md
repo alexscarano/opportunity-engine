@@ -1,7 +1,10 @@
-# Task Tracker - Update Gemini Models
+# Task Tracker - SQLite Auth & Project Relationship
 
 | Task | Status | Description |
 | :--- | :---: | :--- |
-| **1. Update `google_api.py`** | [x] | Filter out deprecated 1.5/2.0 models and update defaults. |
-| **2. Update `streamlit_app.py`** | [x] | Update selection list and filter out deprecated models in UI. |
-| **3. Verification** | [x] | Verify Streamlit app runs and correct models are displayed. |
+| **1. Explore project context** | [x] | Checked project files, `streamlit_app.py`, and dependencies. |
+| **2. Ask clarifying questions** | [x] | Clarified SQLite as database, file-based project associations, and 1-to-N ownership. |
+| **3. Propose 2-3 approaches** | [x] | Proposed approaches; selected Approach 1 (native `sqlite3` + `hashlib`). |
+| **4. Present design sections** | [x] | Present architecture, database schema, user flow, and security design. |
+| **5. Write design doc** | [x] | Document the approved design in a markdown file and commit it. |
+| **6. Transition to implementation** | [x] | Create the detailed `implementation_plan.md` using the writing-plans skill. |
