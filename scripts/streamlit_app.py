@@ -274,6 +274,7 @@ from dashboard_charts import (
     build_causal_line_chart,
     build_investment_bar_chart,
     build_sessions_bar_chart,
+    build_response_curve_individual,
 )
 
 init_db()
@@ -1631,26 +1632,37 @@ with tab3:
                         "Selecione um Canal para Visualizar a Curva", channels
                     )
 
-                    # Sanitize channel name for filename
-                    safe_channel_name = "".join(
-                        [
-                            c if c.isalnum() or c in ["-", "_"] else "_"
-                            for c in selected_channel
-                        ]
-                    )
-                    img_path = os.path.join(
-                        output_dir, f"individual_response_curve_{safe_channel_name}.png"
-                    )
+                    channel_df = ind_df[ind_df["Channel"] == selected_channel]
 
-                    if os.path.exists(img_path):
-                        st.image(
-                            img_path,
-                            caption=f"Curva de Resposta Individual: {selected_channel}",
+                    if "Historical_Avg" in ind_df.columns:
+                        st.plotly_chart(
+                            build_response_curve_individual(
+                                channel_df, selected_channel
+                            ),
+                            use_container_width=True,
                         )
                     else:
-                        st.warning(
-                            f"Imagem da curva não encontrada para o canal: {selected_channel}"
+                        # Sanitize channel name for filename
+                        safe_channel_name = "".join(
+                            [
+                                c if c.isalnum() or c in ["-", "_"] else "_"
+                                for c in selected_channel
+                            ]
                         )
+                        img_path = os.path.join(
+                            output_dir,
+                            f"individual_response_curve_{safe_channel_name}.png",
+                        )
+
+                        if os.path.exists(img_path):
+                            st.image(
+                                img_path,
+                                caption=f"Curva de Resposta Individual: {selected_channel}",
+                            )
+                        else:
+                            st.warning(
+                                f"Imagem da curva não encontrada para o canal: {selected_channel}"
+                            )
                 else:
                     st.info(
                         "Os dados das curvas individuais não foram encontrados. Certifique-se de rodar a análise primeiro."
