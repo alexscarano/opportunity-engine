@@ -95,6 +95,16 @@ _RULES = [
     (r"Generating Markdown report to", None),
     (r"Markdown report generated successfully\.", None),
     (r"Gemini HTML report saved successfully\.", "   - Relatório de recomendações em HTML gerado com sucesso."),
+    (r"^-{10,}$", None),
+    (r"Running automated feature selection for causal model\.\.\.", "   - Analisando variáveis de contexto para o modelo causal..."),
+    (r"No additional performance covariates found\. Proceeding without them\.", None),
+    (r"Warning\b", None),
+    (r"site-packages", None),
+    (r"^\s*warn\(", None),
+    (r"^\s*self\._init_dates", None),
+    (r"^\s*trend\s*=", None),
+    (r"^\s*var\s*[*]?=", None),
+    (r"^\s*return\s+get_prediction_index", None),
 ]
 
 

@@ -11,6 +11,8 @@ This script orchestrates the entire workflow:
 """
 
 import argparse
+import warnings
+warnings.filterwarnings("ignore")
 import json
 import re
 import traceback

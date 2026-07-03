@@ -31,6 +31,21 @@ class TestLogger(unittest.TestCase):
         line3 = "Gemini HTML report saved successfully."
         self.assertEqual(translate_line(line3), "   - Relatório de recomendações em HTML gerado com sucesso.")
 
+    def test_translate_line_additional_patterns(self):
+        self.assertIsNone(translate_line("--------------------------------------------------"))
+        self.assertIsNone(translate_line("   - No additional performance covariates found. Proceeding without them."))
+        self.assertEqual(
+            translate_line("   - Running automated feature selection for causal model..."),
+            "   - Analisando variáveis de contexto para o modelo causal..."
+        )
+        # Python Warnings & Code lines
+        self.assertIsNone(translate_line("C:\\path\\site-packages\\some_lib.py:12: SpecificationWarning: Some warning"))
+        self.assertIsNone(translate_line("  warn(\"Some warning message\")"))
+        self.assertIsNone(translate_line("  self._init_dates(dates, freq)"))
+        self.assertIsNone(translate_line("  trend = spsolve(...)"))
+        self.assertIsNone(translate_line("  var *= np.divide(...)"))
+        self.assertIsNone(translate_line("  return get_prediction_index(...)"))
+
     def test_log_context_suppression(self):
         # We redirect sys.stdout inside LogContext, but we want to capture what LogContext writes to its parent stdout.
         # We can mock the stdout property of LogContext.
