@@ -34,6 +34,7 @@ from presentation import (
     save_line_chart_plot,
     save_investment_bar_plot,
     save_sessions_bar_plot,
+    save_causal_chart_data,
     save_opportunity_curve_plot,
     create_comparative_saturation_md,
     save_investment_distribution_donuts,
@@ -359,6 +360,15 @@ def main(config, args):
                                     analyzed_event["sessions_bar_df"],
                                     image_paths["sessions"],
                                     kpi_name=kpi_col,
+                                )
+
+                                save_causal_chart_data(
+                                    event_output_dir,
+                                    analyzed_event["line_df"],
+                                    analyzed_event["inv_bar_df"],
+                                    analyzed_event["sessions_bar_df"],
+                                    analyzed_event["accuracy_df"],
+                                    mae=results_data.get("mae", 0),
                                 )
 
                                 # Generate and save the comprehensive presentation data CSV for this event
