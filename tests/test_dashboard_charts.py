@@ -15,6 +15,7 @@ from dashboard_charts import (
     build_channel_saturation_comparison,
     build_events_overview,
     build_accuracy_chart,
+    build_causal_line_chart,
 )
 
 
@@ -183,6 +184,35 @@ class TestBuildAccuracyChart(unittest.TestCase):
         fig = build_accuracy_chart(self.accuracy_df)
         self.assertEqual(len(fig.layout.annotations), 1)
         self.assertIn("1.50", fig.layout.annotations[0].text)
+
+
+class TestBuildCausalLineChart(unittest.TestCase):
+
+    def setUp(self):
+        self.line_df = pd.DataFrame({
+            "Date": pd.date_range(start="2026-01-01", periods=3),
+            "Actual_KPI": [10, 20, 15],
+            "Forecasted_KPI": [12, 18, 14],
+            "Investment": [100, 200, 150],
+        })
+
+    def test_plots_kpi_lines_on_primary_axis(self):
+        fig = build_causal_line_chart(self.line_df, kpi_name="Vendas")
+        names = [trace.name for trace in fig.data]
+        self.assertIn("Vendas Real", names)
+        self.assertIn("Vendas Previsto", names)
+        real_trace = fig.data[names.index("Vendas Real")]
+        self.assertEqual(list(real_trace.y), [10, 20, 15])
+
+    def test_plots_investment_bars_on_secondary_axis(self):
+        fig = build_causal_line_chart(self.line_df)
+        names = [trace.name for trace in fig.data]
+        inv_trace = fig.data[names.index("Investimento")]
+        self.assertEqual(inv_trace.type, "bar")
+        self.assertEqual(inv_trace.yaxis, "y2")
+        self.assertEqual(list(inv_trace.y), [100, 200, 150])
+        self.assertEqual(fig.layout.yaxis2.overlaying, "y")
+        self.assertEqual(fig.layout.yaxis2.side, "right")
 
 
 if __name__ == "__main__":

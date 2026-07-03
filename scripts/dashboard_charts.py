@@ -301,3 +301,46 @@ def build_accuracy_chart(accuracy_df, kpi_name="kpi"):
         margin=dict(l=20, r=20, t=50, b=20),
     )
     return fig
+
+
+def build_causal_line_chart(line_df, kpi_name="kpi"):
+    """Dual-axis chart: Real vs Forecasted KPI (left axis) with Investment overlay (right axis, bars)."""
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=line_df["Date"],
+            y=line_df["Actual_KPI"],
+            mode="lines",
+            name=f"{kpi_name} Real",
+            line=dict(color="black", width=2),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=line_df["Date"],
+            y=line_df["Forecasted_KPI"],
+            mode="lines",
+            name=f"{kpi_name} Previsto",
+            line=dict(color="red", width=2, dash="dash"),
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            x=line_df["Date"],
+            y=line_df["Investment"],
+            name="Investimento",
+            yaxis="y2",
+            marker=dict(color="blue", opacity=0.3),
+        )
+    )
+
+    fig.update_layout(
+        title="Análise de Impacto Causal: Real vs. Previsto",
+        xaxis_title="Data",
+        yaxis=dict(title=kpi_name),
+        yaxis2=dict(title="Investimento", overlaying="y", side="right", showgrid=False),
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="top", y=1.15, xanchor="center", x=0.5),
+        margin=dict(l=20, r=20, t=50, b=20),
+    )
+    return fig
