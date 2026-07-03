@@ -187,20 +187,71 @@ with tab1:
                     except:
                         return "date"
                 
+                def get_channel_col(file_path):
+                    if not file_path: return "product_group"
+                    try:
+                        df = pd.read_csv(file_path, nrows=0)
+                        for col in df.columns:
+                            if col.lower() in ['channel', 'product_group', 'product', 'media', 'source', 'campaign', 'canal', 'grupo']:
+                                return col
+                        return df.columns[0]
+                    except:
+                        return "product_group"
+
+                def get_investment_col(file_path):
+                    if not file_path: return "total_revenue"
+                    try:
+                        df = pd.read_csv(file_path, nrows=0)
+                        for col in df.columns:
+                            if col.lower() in ['investment', 'spend', 'cost', 'investimento', 'revenue', 'total_revenue', 'valor']:
+                                return col
+                        return df.columns[-1]
+                    except:
+                        return "total_revenue"
+
+                def get_trends_col(file_path):
+                    if not file_path: return "Ad Opportunities"
+                    try:
+                        df = pd.read_csv(file_path, nrows=0)
+                        for col in df.columns:
+                            if col.lower() in ['searches', 'trends', 'opportunities', 'ad opportunities', 'volume', 'generic searches']:
+                                return col
+                        return df.columns[-1]
+                    except:
+                        return "Ad Opportunities"
+
+                def get_kpi_col(file_path, user_kpi):
+                    if not file_path: return user_kpi
+                    try:
+                        df = pd.read_csv(file_path, nrows=0)
+                        if user_kpi in df.columns:
+                            return user_kpi
+                        for col in df.columns:
+                            if col.lower() in ['kpi', 'sessions', 'conversions', 'revenue', 'conversoes', 'cliques', 'clicks']:
+                                return col
+                        return df.columns[1] if len(df.columns) > 1 else df.columns[0]
+                    except:
+                        return user_kpi
+
                 inv_date = get_date_col(inv_path)
                 perf_date = get_date_col(perf_path)
                 trends_date = get_date_col(trends_path) if trends_path else "Day"
+
+                inv_channel = get_channel_col(inv_path)
+                inv_investment = get_investment_col(inv_path)
+                perf_kpi = get_kpi_col(perf_path, kpi_column)
+                trends_col = get_trends_col(trends_path) if trends_path else "Ad Opportunities"
 
                 dynamic_config = {
                   "advertiser_name": f"{safe_adv_name}_dynamic",
                   "client_industry": "Dynamic Execution",
                   "client_business_goal": "Optimize through Streamlit",
-                  "primary_business_metric_name": kpi_column,
+                  "primary_business_metric_name": perf_kpi,
                   "investment_file_path": inv_path,
                   "performance_file_path": perf_path,
                   "generic_trends_file_path": trends_path if trends_path else None,
                   "output_directory": "outputs/",
-                  "performance_kpi_column": kpi_column,
+                  "performance_kpi_column": perf_kpi,
                   "average_ticket": avg_ticket,
                   "conversion_rate_from_kpi_to_bo": conversion_rate,
                   "financial_targets": {
@@ -226,16 +277,16 @@ with tab1:
                   "column_mapping": {
                     "investment_file": {
                       "date_col": inv_date,
-                      "channel_col": "product_group",
-                      "investment_col": "total_revenue"
+                      "channel_col": inv_channel,
+                      "investment_col": inv_investment
                     },
                     "performance_file": {
                       "date_col": perf_date,
-                      "kpi_col": kpi_column
+                      "kpi_col": perf_kpi
                     },
                     "generic_trends_file": {
                       "date_col": trends_date,
-                      "trends_col": "Ad Opportunities"
+                      "trends_col": trends_col
                     }
                   }
                 }
