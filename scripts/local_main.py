@@ -375,19 +375,25 @@ def main(config, args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Automated Total Opportunity Case Study Generator")
-    parser.add_argument("--config", required=True, help="Path to the JSON configuration file.")
-    parser.add_argument("--min_intervention_date", help="Optional: Filter events to only include those after this date (YYYY-MM-DD).")
-    args = parser.parse_args()
+    import sys
+    import os
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    from logger import LogContext
 
-    try:
-        with open(args.config, 'r') as f:
-            config = json.load(f)
-    except FileNotFoundError:
-        print(f"ERROR: Configuration file not found at '{args.config}'")
-        exit(1)
-    except json.JSONDecodeError:
-        print(f"ERROR: Could not decode JSON from the configuration file '{args.config}'. Please check for syntax errors.")
-        exit(1)
+    with LogContext("local_main"):
+        parser = argparse.ArgumentParser(description="Automated Total Opportunity Case Study Generator")
+        parser.add_argument("--config", required=True, help="Path to the JSON configuration file.")
+        parser.add_argument("--min_intervention_date", help="Optional: Filter events to only include those after this date (YYYY-MM-DD).")
+        args = parser.parse_args()
 
-    main(config, args)
+        try:
+            with open(args.config, 'r') as f:
+                config = json.load(f)
+        except FileNotFoundError:
+            print(f"ERROR: Configuration file not found at '{args.config}'")
+            exit(1)
+        except json.JSONDecodeError:
+            print(f"ERROR: Could not decode JSON from the configuration file '{args.config}'. Please check for syntax errors.")
+            exit(1)
+
+        main(config, args)
