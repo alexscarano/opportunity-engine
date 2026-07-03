@@ -249,7 +249,20 @@ import sys
 if os.path.dirname(__file__) not in sys.path:
     sys.path.append(os.path.dirname(__file__))
 
-from db import init_db, create_user, verify_user, add_user_project, get_user_projects, verify_project_ownership, delete_user_project, rename_user_project, get_user_api_key, update_user_api_key, create_session, get_session
+from db import (
+    init_db,
+    create_user,
+    verify_user,
+    add_user_project,
+    get_user_projects,
+    verify_project_ownership,
+    delete_user_project,
+    rename_user_project,
+    get_user_api_key,
+    update_user_api_key,
+    create_session,
+    get_session,
+)
 from streamlit_cookies_controller import CookieController
 from dashboard_charts import (
     build_icpa_curve,
@@ -257,26 +270,30 @@ from dashboard_charts import (
     build_channel_mix_evolution,
     build_channel_saturation_comparison,
     build_events_overview,
+    build_accuracy_chart,
+    build_causal_line_chart,
+    build_investment_bar_chart,
+    build_sessions_bar_chart,
 )
 
 init_db()
 # Restore session WITHOUT cookie component (synchronous, no rerun needed)
-if 'user_id' not in st.session_state:
+if "user_id" not in st.session_state:
     # 1. URL query param: ?sid=<token> — survives F5
-    sid = st.query_params.get('sid')
+    sid = st.query_params.get("sid")
     if sid:
         row = get_session(sid)
         if row:
-            st.session_state['user_id'], st.session_state['username'] = row
+            st.session_state["user_id"], st.session_state["username"] = row
 
-if 'user_id' not in st.session_state:
+if "user_id" not in st.session_state:
     # 2. HTTP cookie headers (Streamlit >= 1.38, works if cookies reach the server)
     try:
-        _uid = st.context.cookies.get('user_id')
-        _uname = st.context.cookies.get('username')
+        _uid = st.context.cookies.get("user_id")
+        _uname = st.context.cookies.get("username")
         if _uid and _uname:
-            st.session_state['user_id'] = int(_uid)
-            st.session_state['username'] = _uname
+            st.session_state["user_id"] = int(_uid)
+            st.session_state["username"] = _uname
     except Exception:
         pass
 
@@ -284,31 +301,36 @@ if 'user_id' not in st.session_state:
 # CookieController.__init__ only calls _cookie_controller() (renders the async JS component)
 # when 'cookies' is NOT in session state. The component then fires setComponentValue() which
 # triggers an extra rerun — causing the visible flicker. Stubbing prevents the component call.
-if 'user_id' in st.session_state and 'cookies' not in st.session_state:
-    st.session_state['cookies'] = {}  # ponytail: stub — CookieController takes else branch, no component rerun
+if "user_id" in st.session_state and "cookies" not in st.session_state:
+    st.session_state[
+        "cookies"
+    ] = {}  # ponytail: stub — CookieController takes else branch, no component rerun
 
 # Initialize CookieController (needed for login cookie write and legacy cookie read fallback)
-if 'cookie_controller' not in st.session_state:
+if "cookie_controller" not in st.session_state:
     st.session_state.cookie_controller = CookieController()
 controller = st.session_state.cookie_controller
 
-if 'user_id' not in st.session_state:
+if "user_id" not in st.session_state:
     # 3. Cookie component fallback (async — component triggers its own rerun when it has data)
-    cookie_user_id = controller.get('user_id')
-    cookie_username = controller.get('username')
+    cookie_user_id = controller.get("user_id")
+    cookie_username = controller.get("username")
     if cookie_user_id and cookie_username:
-        st.session_state['user_id'] = int(cookie_user_id)
-        st.session_state['username'] = cookie_username
+        st.session_state["user_id"] = int(cookie_user_id)
+        st.session_state["username"] = cookie_username
         st.rerun()
 
-if 'user_id' not in st.session_state:
+if "user_id" not in st.session_state:
     st.markdown(PREMIUM_CSS, unsafe_allow_html=True)
-    st.markdown("""
+    st.markdown(
+        """
         <div style="text-align: center; margin-top: 50px; margin-bottom: 20px;">
             <h1 style="color: #1a73e8; font-size: 2.5rem; font-weight: 700;">Opportunity Engine</h1>
             <p style="color: #5f6368; font-size: 1.1rem;">Por favor, faça o login para acessar a plataforma de Otimização de Oportunidades.</p>
         </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
@@ -320,12 +342,12 @@ if 'user_id' not in st.session_state:
             if st.button("Entrar", use_container_width=True):
                 user_id = verify_user(username, password)
                 if user_id:
-                    st.session_state['user_id'] = user_id
-                    st.session_state['username'] = username
+                    st.session_state["user_id"] = user_id
+                    st.session_state["username"] = username
                     token = create_session(user_id, username)
-                    st.query_params['sid'] = token
-                    controller.set('user_id', str(user_id), max_age=30*86400)
-                    controller.set('username', username, max_age=30*86400)
+                    st.query_params["sid"] = token
+                    controller.set("user_id", str(user_id), max_age=30 * 86400)
+                    controller.set("username", username, max_age=30 * 86400)
                     st.success(f"Bem-vindo, {username}!")
                     st.rerun()
                 else:
@@ -337,12 +359,12 @@ if 'user_id' not in st.session_state:
                 else:
                     try:
                         user_id = create_user(username, password)
-                        st.session_state['user_id'] = user_id
-                        st.session_state['username'] = username
+                        st.session_state["user_id"] = user_id
+                        st.session_state["username"] = username
                         token = create_session(user_id, username)
-                        st.query_params['sid'] = token
-                        controller.set('user_id', str(user_id), max_age=30*86400)
-                        controller.set('username', username, max_age=30*86400)
+                        st.query_params["sid"] = token
+                        controller.set("user_id", str(user_id), max_age=30 * 86400)
+                        controller.set("username", username, max_age=30 * 86400)
                         st.success(f"Cadastro realizado! Bem-vindo, {username}!")
                         st.rerun()
                     except ValueError as e:
@@ -368,7 +390,7 @@ except ImportError:
         data_preprocessor = None
 
 # Get projects associated with the logged-in user
-db_projects = get_user_projects(st.session_state['user_id'])
+db_projects = get_user_projects(st.session_state["user_id"])
 project_options = {name: path for name, path in db_projects}
 
 # Initialize session state for config path
@@ -380,25 +402,34 @@ if "active_config_path" not in st.session_state:
 
 # Enforce IDOR check on load
 if st.session_state.get("active_config_path"):
-    if not verify_project_ownership(st.session_state['user_id'], st.session_state['active_config_path']):
+    if not verify_project_ownership(
+        st.session_state["user_id"], st.session_state["active_config_path"]
+    ):
         st.session_state["active_config_path"] = ""
 
 # Sidebar user card & Logout
 st.sidebar.markdown(f"**Conectado como:** {st.session_state['username']}")
 if st.sidebar.button("Sair/Logout", use_container_width=True):
     # Remove server-side session
-    sid = st.query_params.get('sid')
+    sid = st.query_params.get("sid")
     if sid:
         from db import delete_session
+
         delete_session(sid)
     # Clear query param and cookies (best-effort — cookie may not be in component cache)
     st.query_params.clear()
     try:
-        controller.remove('user_id')
-        controller.remove('username')
+        controller.remove("user_id")
+        controller.remove("username")
     except Exception:
         pass
-    for key in ['user_id', 'username', 'active_config_path', '_cookie_init_done', 'cookies']:
+    for key in [
+        "user_id",
+        "username",
+        "active_config_path",
+        "_cookie_init_done",
+        "cookies",
+    ]:
         st.session_state.pop(key, None)
     st.rerun()
 st.sidebar.markdown("---")
@@ -408,7 +439,10 @@ if project_options:
     option_keys = list(project_options.keys())
     current_index = 0
     for i, key in enumerate(option_keys):
-        if project_options[key] == st.session_state.get("active_config_path"):
+        if (
+            project_options[key].replace("\\", "/").strip()
+            == st.session_state.get("active_config_path", "").replace("\\", "/").strip()
+        ):
             current_index = i
             break
 
@@ -417,42 +451,56 @@ if project_options:
     )
     if selected_project:
         st.session_state["active_config_path"] = project_options[selected_project]
-        
-    # Project Rename UI
-    if st.sidebar.button("Renomear Projeto Atual", key="rename_proj_btn", use_container_width=True):
-        st.session_state['show_rename_confirm'] = True
 
-    if st.session_state.get('show_rename_confirm'):
-        new_name = st.sidebar.text_input("Novo nome:", value=selected_project, key="rename_proj_input")
+    # Project Rename UI
+    if st.sidebar.button(
+        "Renomear Projeto Atual", key="rename_proj_btn", use_container_width=True
+    ):
+        st.session_state["show_rename_confirm"] = True
+
+    if st.session_state.get("show_rename_confirm"):
+        new_name = st.sidebar.text_input(
+            "Novo nome:", value=selected_project, key="rename_proj_input"
+        )
         col_ren1, col_ren2 = st.sidebar.columns(2)
         with col_ren1:
             if st.button("Salvar", key="confirm_rename_btn", use_container_width=True):
-                if rename_user_project(st.session_state['user_id'], selected_project, new_name):
+                if rename_user_project(
+                    st.session_state["user_id"], selected_project, new_name
+                ):
                     st.toast(f"Projeto renomeado para '{new_name.strip()}'.")
-                    st.session_state['show_rename_confirm'] = False
+                    st.session_state["show_rename_confirm"] = False
                     st.rerun()
                 else:
                     st.error("Nome inválido ou já em uso.")
         with col_ren2:
             if st.button("Cancelar", key="cancel_rename_btn", use_container_width=True):
-                st.session_state['show_rename_confirm'] = False
+                st.session_state["show_rename_confirm"] = False
                 st.rerun()
 
     # Project Deletion UI
-    if st.sidebar.button("Excluir Projeto Atual", key="delete_proj_btn", use_container_width=True):
-        st.session_state['show_delete_confirm'] = True
+    if st.sidebar.button(
+        "Excluir Projeto Atual", key="delete_proj_btn", use_container_width=True
+    ):
+        st.session_state["show_delete_confirm"] = True
 
-    if st.session_state.get('show_delete_confirm'):
-        st.sidebar.warning(f"Deseja mesmo excluir o projeto '{selected_project}' e todos os seus arquivos?")
+    if st.session_state.get("show_delete_confirm"):
+        st.sidebar.warning(
+            f"Deseja mesmo excluir o projeto '{selected_project}' e todos os seus arquivos?"
+        )
         col_del1, col_del2 = st.sidebar.columns(2)
         with col_del1:
-            if st.button("Sim, Excluir", key="confirm_delete_btn", use_container_width=True):
-                path_to_delete = st.session_state['active_config_path']
+            if st.button(
+                "Sim, Excluir", key="confirm_delete_btn", use_container_width=True
+            ):
+                path_to_delete = st.session_state["active_config_path"]
                 # Verify ownership to prevent IDOR on delete
-                if verify_project_ownership(st.session_state['user_id'], path_to_delete):
+                if verify_project_ownership(
+                    st.session_state["user_id"], path_to_delete
+                ):
                     import shutil
                     import json
-                    
+
                     # 1. Determine output directory from config file before deleting it
                     actual_output_dir = None
                     if os.path.exists(path_to_delete):
@@ -464,44 +512,50 @@ if project_options:
                             actual_output_dir = os.path.join(out_dir_base, adv_name)
                         except Exception:
                             pass
-                    
+
                     if not actual_output_dir:
-                        actual_output_dir = os.path.join("outputs", f"user_{st.session_state['user_id']}", selected_project)
-                    
+                        actual_output_dir = os.path.join(
+                            "outputs",
+                            f"user_{st.session_state['user_id']}",
+                            selected_project,
+                        )
+
                     # 2. Delete input directory
                     project_dir = os.path.dirname(path_to_delete)
                     if os.path.exists(project_dir):
                         try:
                             shutil.rmtree(project_dir)
                         except Exception as e:
-                            st.sidebar.error(f"Erro ao excluir arquivos de entrada: {e}")
-                    
+                            st.sidebar.error(
+                                f"Erro ao excluir arquivos de entrada: {e}"
+                            )
+
                     # 3. Delete output directory
                     if os.path.exists(actual_output_dir):
                         try:
                             shutil.rmtree(actual_output_dir)
                         except Exception as e:
                             st.sidebar.error(f"Erro ao excluir arquivos de saída: {e}")
-                    
+
                     # 4. Delete from SQLite
-                    delete_user_project(st.session_state['user_id'], selected_project)
-                    
+                    delete_user_project(st.session_state["user_id"], selected_project)
+
                     st.toast(f"Projeto '{selected_project}' excluído com sucesso.")
-                    st.session_state['active_config_path'] = ""
-                    st.session_state['show_delete_confirm'] = False
+                    st.session_state["active_config_path"] = ""
+                    st.session_state["show_delete_confirm"] = False
                     st.rerun()
                 else:
                     st.error("Erro: Acesso não autorizado.")
         with col_del2:
             if st.button("Cancelar", key="cancel_delete_btn", use_container_width=True):
-                st.session_state['show_delete_confirm'] = False
+                st.session_state["show_delete_confirm"] = False
                 st.rerun()
 else:
     st.sidebar.info("Nenhum projeto encontrado. Faça o setup de um novo.")
 
 
 tab1, tab2, tab3 = st.tabs(
-    ["Setup & Execução", "Dashboard de Causal Impact", "Dashboard de Elasticidade"]
+    ["Setup & Execução", "Dashboard de Impacto Causal", "Dashboard de Elasticidade"]
 )
 
 with tab1:
@@ -509,6 +563,13 @@ with tab1:
     st.markdown(
         "Faça o upload dos seus dados e configure os parâmetros financeiros para rodar um novo Motor de Oportunidades."
     )
+
+    if st.session_state.pop("show_run_success_balloons", False):
+        st.success("Análise Causal e Otimização concluídas com sucesso!")
+        st.balloons()
+        st.info(
+            "Os dados foram gerados! Explore as abas de Impacto Causal e Elasticidade."
+        )
 
     with st.form("setup_form"):
         st.markdown(
@@ -525,15 +586,17 @@ with tab1:
         col1, col2 = st.columns(2, gap="large")
 
         with col1:
-            st.markdown('<span class="col-divider-anchor"></span>', unsafe_allow_html=True)
+            st.markdown(
+                '<span class="col-divider-anchor"></span>', unsafe_allow_html=True
+            )
             st.subheader("Configurações Gerais")
             advertiser_name = st.text_input(
                 "Nome do Projeto",
                 value="Meu_Projeto_Dynamic",
-                help="Usado para nomear as pastas de resultados."
+                help="Usado para nomear as pastas de resultados.",
             )
             # Fetch saved API Key from SQLite
-            saved_key = get_user_api_key(st.session_state['user_id']) or ""
+            saved_key = get_user_api_key(st.session_state["user_id"]) or ""
             gemini_key = st.text_input(
                 "Chave de API do Gemini",
                 value=saved_key,
@@ -555,11 +618,14 @@ with tab1:
             kpi_column = st.text_input(
                 "Coluna do KPI no CSV de Performance",
                 value="Sessions",
-                help="Nome exato da coluna (ex: Sessions, Conversions, Leads)."
+                help="Nome exato da coluna (ex: Sessions, Conversions, Leads).",
             )
             optimization_target_label = st.selectbox(
                 "Objetivo da Otimização",
-                options=["Maximizar Volume de Conversões (Leads, Vendas, etc.)", "Maximizar Receita / Faturamento (Revenue)"],
+                options=[
+                    "Maximizar Volume de Conversões (Leads, Vendas, etc.)",
+                    "Maximizar Receita / Faturamento (Revenue)",
+                ],
             )
             optimization_target = (
                 "CONVERSIONS"
@@ -587,17 +653,17 @@ with tab1:
             inv_file = st.file_uploader(
                 "Investimento (obrigatório)",
                 type=["csv"],
-                help="Investimento diário por canal de mídia."
+                help="Investimento diário por canal de mídia.",
             )
             perf_file = st.file_uploader(
                 "Performance (obrigatório)",
                 type=["csv"],
-                help="Histórico diário de resultados/KPIs."
+                help="Histórico diário de resultados/KPIs.",
             )
             trends_file = st.file_uploader(
                 "Tendências (opcional)",
                 type=["csv"],
-                help="Variável de controle (ex: Google Trends)."
+                help="Variável de controle (ex: Google Trends).",
             )
 
             st.divider()
@@ -616,7 +682,9 @@ with tab1:
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
             submit_btn = st.form_submit_button(
-                "Construir Motor de Oportunidades", type="primary", use_container_width=True
+                "Construir Motor de Oportunidades",
+                type="primary",
+                use_container_width=True,
             )
         with col_btn2:
             save_settings_btn = st.form_submit_button(
@@ -624,13 +692,13 @@ with tab1:
             )
 
     if save_settings_btn:
-        update_user_api_key(st.session_state['user_id'], gemini_key)
+        update_user_api_key(st.session_state["user_id"], gemini_key)
         st.success("Configurações salvas com sucesso!")
 
     if submit_btn:
         # Persist user's Gemini API Key in SQLite
-        update_user_api_key(st.session_state['user_id'], gemini_key)
-        
+        update_user_api_key(st.session_state["user_id"], gemini_key)
+
         if not inv_file or not perf_file:
             st.error(
                 "Por favor, faça upload dos arquivos de Investimento e Performance para continuar."
@@ -643,7 +711,11 @@ with tab1:
                 safe_adv_name = (
                     advertiser_name.replace(" ", "_").replace("/", "").replace("\\", "")
                 )
-                dynamic_dir = os.path.join("inputs", f"user_{st.session_state['user_id']}", f"{safe_adv_name}_dynamic")
+                dynamic_dir = os.path.join(
+                    "inputs",
+                    f"user_{st.session_state['user_id']}",
+                    f"{safe_adv_name}_dynamic",
+                )
                 os.makedirs(dynamic_dir, exist_ok=True)
 
                 inv_path = os.path.join(dynamic_dir, "investment.csv")
@@ -821,7 +893,11 @@ with tab1:
                     json.dump(dynamic_config, f, indent=4)
 
                 st.session_state["active_config_path"] = config_path_gen
-                add_user_project(st.session_state['user_id'], f"{safe_adv_name}_dynamic", config_path_gen)
+                add_user_project(
+                    st.session_state["user_id"],
+                    f"{safe_adv_name}_dynamic",
+                    config_path_gen,
+                )
 
             st.success(
                 "Configuração salva! Iniciando a engine Causais + Elasticidade..."
@@ -882,33 +958,26 @@ with tab1:
             full_log = ""
             for line in iter(process.stdout.readline, ""):
                 full_log += line
-                log_lines = full_log.split("\n")
-                display_log = (
-                    "\n".join(log_lines[-20:]) if len(log_lines) > 20 else full_log
-                )
                 log_container.code(
-                    f"Engine de Oportunidades Rodando...\n{display_log}",
+                    f"Engine de Oportunidades Rodando...\n{full_log}",
                     language="shell",
+                    height=400,
                 )
 
             process.stdout.close()
             return_code = process.wait()
 
             if return_code == 0:
-                status_container.success(
-                    "Análise Causal e Otimização concluídas com sucesso!"
-                )
-                st.balloons()
-                st.info(
-                    "Os dados foram gerados! Explore as abas de Causal Impact e Elasticidade."
-                )
+                st.session_state["active_config_path"] = config_path_gen
+                st.session_state["show_run_success_balloons"] = True
+                st.rerun()
             else:
                 status_container.error(
                     "Houve um erro na execução do motor. Verifique os logs acima."
                 )
 
 with tab2:
-    st.header("Análise de Causal Impact (Por Evento)")
+    st.header("Análise de Impacto Causal (Por Evento)")
     st.markdown(
         "Selecione um evento analisado abaixo para visualizar o relatório detalhado do Gemini avaliando o impacto causal deste pico de investimento."
     )
@@ -1008,7 +1077,7 @@ with tab2:
                             elif "investment" in filename or "cost" in filename:
                                 caption = "Pico de Investimento (Intervenção)"
                             elif "line_chart" in filename:
-                                caption = "Gráfico Resumo (Causal Impact)"
+                                caption = "Gráfico Resumo (Impacto Causal)"
                             else:
                                 caption = "Gráfico da Análise"
 
@@ -1017,9 +1086,62 @@ with tab2:
                             )
                 else:
                     st.warning("Nenhum relatório encontrado para este evento.")
+
+            csv_names = [
+                "line_chart_data.csv",
+                "accuracy_data.csv",
+                "investment_data.csv",
+                "sessions_data.csv",
+            ]
+            if all(os.path.exists(os.path.join(selected_dir, f)) for f in csv_names):
+                st.markdown("### Gráficos Interativos")
+                kpi_name = active_config.get("primary_business_metric_name", "kpi")
+
+                line_chart_df = pd.read_csv(os.path.join(selected_dir, "line_chart_data.csv"))
+                st.plotly_chart(
+                    build_causal_line_chart(line_chart_df, kpi_name=kpi_name),
+                    use_container_width=True,
+                )
+
+                accuracy_chart_df = pd.read_csv(os.path.join(selected_dir, "accuracy_data.csv"))
+                st.plotly_chart(
+                    build_accuracy_chart(accuracy_chart_df, kpi_name=kpi_name),
+                    use_container_width=True,
+                )
+
+                col1, col2 = st.columns(2)
+                investment_chart_df = pd.read_csv(
+                    os.path.join(selected_dir, "investment_data.csv"), index_col=0
+                )
+                sessions_chart_df = pd.read_csv(
+                    os.path.join(selected_dir, "sessions_data.csv"), index_col=0
+                )
+                with col1:
+                    st.plotly_chart(
+                        build_investment_bar_chart(investment_chart_df),
+                        use_container_width=True,
+                    )
+                with col2:
+                    st.plotly_chart(
+                        build_sessions_bar_chart(sessions_chart_df, kpi_name=kpi_name),
+                        use_container_width=True,
+                    )
+
         else:
             st.info(
-                "Nenhum relatório de Causal Impact encontrado. Rode o motor na aba Setup ou verifique as restrições."
+                "Nenhum relatório de Impacto Causal encontrado. Rode o motor na aba Setup ou verifique as restrições abaixo."
+            )
+            st.markdown(
+                f"""
+**Um evento só gera relatório se passar por todas as condições:**
+- Pico ou queda de investimento semanal de ao menos **+{active_config.get("increase_threshold_percent", 50)}%** ou **-{active_config.get("decrease_threshold_percent", 30)}%** vs. a média das últimas 12 semanas
+- Pelo menos **30 dias** de dados antes do evento
+- Significância estatística: **p-value < {active_config.get("p_value_threshold", 0.1)}**
+- Ajuste do modelo: **R² ≥ {active_config.get("r_squared_threshold", 0.6)}**
+- Direção lógica (investimento sobe e KPI sobe, ou ambos caem)
+
+Consulte o log de execução da aba Setup para ver o motivo exato de cada evento descartado.
+"""
             )
     else:
         st.info("Configuração não encontrada. Faça o Setup para começar.")
