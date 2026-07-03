@@ -114,10 +114,10 @@ def generate_event_saturation_curves(kpi_df, daily_investment_df, trends_df, con
         saturation_filepath = os.path.join(event_output_dir, 'SATURATION_CURVE.md')
         with open(saturation_filepath, 'w', encoding='utf-8') as f:
             f.write(final_markdown)
-        print(f"   - ✅ Successfully generated event saturation analysis file at: {saturation_filepath}")
+        print(f"   - Successfully generated event saturation analysis file at: {saturation_filepath}")
 
     except Exception as e:
-        print(f"   - ⚠️ WARNING: Could not generate event saturation curve. Details: {e}")
+        print(f"   - WARNING: Could not generate event saturation curve. Details: {e}")
         return pd.DataFrame(), pd.DataFrame(), None, None, None, None, None, None, None
 
     return full_response_curve_df, scenarios_df, baseline_point, max_efficiency_point, diminishing_return_point, saturation_point, strategic_limit_point, model_params, channel_proportions
@@ -128,7 +128,7 @@ def run_global_saturation_analysis(config):
     Generates a comprehensive saturation analysis for all individual channels and the combined total,
     independent of event detection. Saves results to a dedicated global directory.
     """
-    print("\n" + "="*50 + "\n📈 Starting Global Saturation Analysis...\n" + "="*50)
+    print("\n" + "="*50 + "\nStarting Global Saturation Analysis...\n" + "="*50)
     
     try:
         kpi_df, daily_investment_df, trends_df, _ = data_preprocessor.load_and_prepare_data(config)
@@ -212,7 +212,7 @@ def run_global_saturation_analysis(config):
 
             except Exception as e:
                 import traceback
-                print(f"   - ⚠️ WARNING: Could not generate combined saturation curve for all channels. Details: {e}")
+                print(f"   - WARNING: Could not generate combined saturation curve for all channels. Details: {e}")
                 traceback.print_exc()
 
 
@@ -324,11 +324,11 @@ Para cada cenário, a distribuição do investimento entre os canais é feita da
             saturation_filepath = os.path.join(output_dir, 'SATURATION_CURVE.md')
             with open(saturation_filepath, 'w', encoding='utf-8') as f:
                 f.write(markdown_content)
-            print(f"   - ✅ Successfully generated global saturation analysis file at: {saturation_filepath}")
+            print(f"   - Successfully generated global saturation analysis file at: {saturation_filepath}")
         
-        print("="*50 + "\n✅ Global Saturation Analysis Complete.\n" + "="*50)
+        print("="*50 + "\nGlobal Saturation Analysis Complete.\n" + "="*50)
 
     except Exception as e:
         import traceback
-        print(f"❌ A critical error occurred during the global saturation analysis: {e}")
+        print(f"A critical error occurred during the global saturation analysis: {e}")
         traceback.print_exc()

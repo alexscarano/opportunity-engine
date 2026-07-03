@@ -66,7 +66,7 @@ def load_and_prepare_data(config):
     """
     Loads and prepares the KPI, investment, and trends data based on the config.
     """
-    print("\n" + "="*50 + "\n📋 Loading, Cleaning, and Preparing Data...\n" + "="*50)
+    print("\n" + "="*50 + "\nLoading, Cleaning, and Preparing Data...\n" + "="*50)
     
     try:
         # --- Get Column Mappings from Config ---
@@ -184,7 +184,7 @@ def load_and_prepare_data(config):
         if not trends_df.empty:
             final_merged = pd.merge(final_merged, trends_df, on='Date', how='left')
         correlation_matrix = final_merged.corr(numeric_only=True)
-        print("\n" + "="*50 + "\n📊 Final Correlation Matrix (Post-Processing)\n" + "="*50)
+        print("\n" + "="*50 + "\nFinal Correlation Matrix (Post-Processing)\n" + "="*50)
         print(correlation_matrix)
 
         return kpi_df, daily_investment_df, trends_df, correlation_matrix

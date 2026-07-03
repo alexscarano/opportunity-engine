@@ -67,7 +67,7 @@ def generate_recommendations_file(results_data, scenarios_df, config, output_dir
     Generates a detailed recommendations markdown file with investment splits.
     """
     if scenarios_df is None or scenarios_df.empty:
-        print("   - ⚠️ WARNING: Scenarios DataFrame is empty. Skipping recommendations file generation.")
+        print("   - WARNING: Scenarios DataFrame is empty. Skipping recommendations file generation.")
         return
 
     try:
@@ -142,10 +142,10 @@ def generate_recommendations_file(results_data, scenarios_df, config, output_dir
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(content)
             
-        print(f"   - ✅ Successfully generated recommendations file at: {output_path}")
+        print(f"   - Successfully generated recommendations file at: {output_path}")
 
     except Exception as e:
-        print(f"   - ❌ ERROR: Could not generate recommendations file. Details: {e}")
+        print(f"   - ERROR: Could not generate recommendations file. Details: {e}")
         import traceback
         traceback.print_exc()
 
@@ -196,7 +196,7 @@ def generate_basic_recommendations_file(results_data, config, output_dir):
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(content)
             
-        print(f"   - ✅ Successfully generated basic recommendations file at: {output_path}")
+        print(f"   - Successfully generated basic recommendations file at: {output_path}")
 
     except Exception as e:
-        print(f"   - ❌ ERROR: Could not generate basic recommendations file. Details: {e}")
+        print(f"   - ERROR: Could not generate basic recommendations file. Details: {e}")

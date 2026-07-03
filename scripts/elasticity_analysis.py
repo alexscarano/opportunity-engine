@@ -158,7 +158,7 @@ def run_mmm_engine(config):
     Stage 2: Models the residual KPI lift using marketing investment.
     """
     print("="*50)
-    print("📈 Starting Two-Stage Elasticity Analysis Engine...")
+    print("Starting Two-Stage Elasticity Analysis Engine...")
     print("="*50)
 
     try:
@@ -187,7 +187,7 @@ def run_mmm_engine(config):
         df = df.fillna(0)
 
     except Exception as e:
-        print(f"   - ❌ ERROR: Failed to prepare data for Elasticity analysis. Details: {e}")
+        print(f"   - ERROR: Failed to prepare data for Elasticity analysis. Details: {e}")
         return None
 
     kpi_col = 'kpi'
@@ -202,7 +202,7 @@ def run_mmm_engine(config):
     inactive_spend_cols = [col for col in spend_cols if df[col].mean() == 0]
 
     if not active_spend_cols:
-        print("   - ❌ ERROR: No marketing channels with active investment found.")
+        print("   - ERROR: No marketing channels with active investment found.")
         return None
 
     print(f"   - Stage 1: Modeling Organic Baseline...")
@@ -239,7 +239,7 @@ def run_mmm_engine(config):
     )
 
     if not result.success:
-        print(f"   - ⚠️ WARNING: Optimization did not converge fully. Details: {result.message}")
+        print(f"   - WARNING: Optimization did not converge fully. Details: {result.message}")
 
     optimal_params = result.x
     num_active_channels = len(active_spend_cols)
@@ -536,7 +536,7 @@ def generate_aggregated_response_curve(elasticity_results, config, optimized_mix
     if output_dir: # Only export if output_dir is provided
         csv_out_path = os.path.join(output_dir, 'response_curve_data.csv')
         res_df.to_csv(csv_out_path, index=False)
-        print(f"   - ✅ Simulation data exported for UI: {csv_out_path}")
+        print(f"   - Simulation data exported for UI: {csv_out_path}")
     
     return res_df, baseline_point, max_efficiency_point, strategic_limit_point, None, None, strategic_reallocation_point
 
@@ -598,7 +598,7 @@ def generate_individual_response_curves(elasticity_results, config, output_dir=N
     if output_dir:
         csv_out_path = os.path.join(output_dir, 'individual_response_curves_data.csv')
         all_curves_df.to_csv(csv_out_path, index=False)
-        print(f"   - ✅ Individual simulation data exported for UI: {csv_out_path}")
+        print(f"   - Individual simulation data exported for UI: {csv_out_path}")
         
         # --- Plotting Logic (One per channel) ---
         for channel in active_spend_cols:
@@ -627,7 +627,7 @@ def generate_individual_response_curves(elasticity_results, config, output_dir=N
             plot_out_path = os.path.join(output_dir, f'individual_response_curve_{safe_channel_name}.png')
             plt.savefig(plot_out_path)
             plt.close()
-            print(f"   - ✅ Individual curve plot saved for {channel}: {plot_out_path}")
+            print(f"   - Individual curve plot saved for {channel}: {plot_out_path}")
         
     return all_curves_df
 

@@ -20,10 +20,10 @@ def _get_image_as_base64(path):
         with open(path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode('utf-8')
     except FileNotFoundError:
-        print(f"   - ⚠️ WARNING: Image file not found at {path}. It will be omitted from the HTML report.")
+        print(f"   - WARNING: Image file not found at {path}. It will be omitted from the HTML report.")
         return None
     except Exception as e:
-        print(f"   - ⚠️ WARNING: Could not read image file at {path}. Error: {e}")
+        print(f"   - WARNING: Could not read image file at {path}. Error: {e}")
         return None
 
 def _generate_full_report_narrative(gemini_client, results_data, config, market_analysis_df, csv_output_filename=None, correlation_matrix=None):
@@ -140,10 +140,10 @@ A matriz de correlação entre o investimento diário total e os KPIs de negóci
         response = gemini_client.generate_content(prompt)
         cleaned_response_text = response.text.strip().replace('```json\n', '').replace('\n```', '')
         narrative = json.loads(cleaned_response_text)
-        print("   - ✅ Full narrative generated and parsed successfully.")
+        print("   - Full narrative generated and parsed successfully.")
         return narrative
     except Exception as e:
-        print(f"   - ❌ ERROR: Could not generate or parse the full narrative from Gemini. Details: {e}")
+        print(f"   - ERROR: Could not generate or parse the full narrative from Gemini. Details: {e}")
         return json.loads(json_schema.replace('...', 'Error: Could not generate content.'))
 
 def generate_markdown_report_from_narrative(narrative, results_data, config, output_filename):
@@ -209,9 +209,9 @@ def generate_markdown_report_from_narrative(narrative, results_data, config, out
     try:
         with open(output_filename, 'w', encoding='utf-8') as f:
             f.write(md_content)
-        print("   - ✅ Markdown report generated successfully.")
+        print("   - Markdown report generated successfully.")
     except Exception as e:
-        print(f"   - ❌ ERROR: Could not write Markdown report to file. Details: {e}")
+        print(f"   - ERROR: Could not write Markdown report to file. Details: {e}")
 
 def generate_html_report(gemini_client, results_data, config, image_paths, output_filename, market_analysis_df, causal_impact_df, csv_output_filename=None, correlation_matrix=None):
     """
@@ -378,16 +378,16 @@ def generate_html_report(gemini_client, results_data, config, image_paths, outpu
     try:
         with open(output_filename, 'w', encoding='utf-8') as f:
             f.write(html_template)
-        print(f"   - ✅ Gemini HTML report saved successfully.")
+        print(f"   - Gemini HTML report saved successfully.")
     except Exception as e:
-        print(f"   - ❌ ERROR: Could not write HTML report to file. Details: {e}")
+        print(f"   - ERROR: Could not write HTML report to file. Details: {e}")
 
 
 def generate_global_gemini_report(gemini_client, config, scenarios=None, total_investment=None, kpi_projections=None):
     """
     Generates a dedicated Gemini report for the global saturation analysis.
     """
-    print("\n" + "="*50 + "\n📄 Generating Global Gemini Report...\n" + "="*50)
+    print("\n" + "="*50 + "\nGenerating Global Gemini Report...\n" + "="*50)
     
     advertiser_name = config.get('advertiser_name', 'default_advertiser')
     global_output_dir = os.path.join(os.getcwd(), config['output_directory'], advertiser_name, 'global_saturation_analysis')
@@ -400,7 +400,7 @@ def generate_global_gemini_report(gemini_client, config, scenarios=None, total_i
         with open(markdown_path, 'r', encoding='utf-8') as f:
             markdown_content = f.read()
     except FileNotFoundError:
-        print(f"   - ❌ ERROR: Could not find SATURATION_CURVE.md at {markdown_path}. Halting global report generation.")
+        print(f"   - ERROR: Could not find SATURATION_CURVE.md at {markdown_path}. Halting global report generation.")
         return
 
     image_b64s = {
@@ -471,7 +471,7 @@ def generate_global_gemini_report(gemini_client, config, scenarios=None, total_i
         response = gemini_client.generate_content(prompt)
         cleaned_response_text = response.text.strip().replace('```json\n', '').replace('\n```', '')
         narrative = json.loads(cleaned_response_text)
-        print("   - ✅ Global narrative generated and parsed successfully.")
+        print("   - Global narrative generated and parsed successfully.")
         
         # NEW: Save the JSON payload so the Streamlit UI can render the insights without re-running Gemini
         json_output_path = os.path.join(global_output_dir, 'global_narrative.json')
@@ -479,7 +479,7 @@ def generate_global_gemini_report(gemini_client, config, scenarios=None, total_i
             json.dump(narrative, f, ensure_ascii=False, indent=4)
             
     except Exception as e:
-        print(f"   - ❌ ERROR: Could not generate or parse the global narrative from Gemini. Details: {e}")
+        print(f"   - ERROR: Could not generate or parse the global narrative from Gemini. Details: {e}")
         return
 
     # --- 5. Assemble HTML Report ---
@@ -726,8 +726,8 @@ def generate_global_gemini_report(gemini_client, config, scenarios=None, total_i
     try:
         with open(output_filename, 'w', encoding='utf-8') as f:
             f.write(html_template)
-        print(f"   - ✅ Global Gemini HTML report saved successfully to: {output_filename}")
+        print(f"   - Global Gemini HTML report saved successfully to: {output_filename}")
     except Exception as e:
         import traceback
-        print(f"   - ❌ ERROR: Could not write global HTML report to file. Details: {e}")
+        print(f"   - ERROR: Could not write global HTML report to file. Details: {e}")
         traceback.print_exc()

@@ -120,7 +120,7 @@ else:
     st.sidebar.info("Nenhum projeto encontrado. Faça o setup de um novo.")
 
 
-tab1, tab2, tab3 = st.tabs(["⚙️ Setup & Execução", "📊 Dashboard de Causal Impact", "📈 Dashboard de Elasticidade"])
+tab1, tab2, tab3 = st.tabs(["Setup & Execução", "Dashboard de Causal Impact", "Dashboard de Elasticidade"])
 
 with tab1:
     st.header("Configuração de Nova Análise")
@@ -342,14 +342,14 @@ with tab1:
             return_code = process.wait()
             
             if return_code == 0:
-                status_container.success("🎯 Análise Causal e Otimização concluídas com sucesso!")
+                status_container.success("Análise Causal e Otimização concluídas com sucesso!")
                 st.balloons()
-                st.info("🔄 Os dados foram gerados! Explore as abas de Causal Impact e Elasticidade.")
+                st.info("Os dados foram gerados! Explore as abas de Causal Impact e Elasticidade.")
             else:
-                status_container.error("❌ Houve um erro na execução do motor. Verifique os logs acima.")
+                status_container.error("Houve um erro na execução do motor. Verifique os logs acima.")
 
 with tab2:
-    st.header("📊 Análise de Causal Impact (Por Evento)")
+    st.header("Análise de Causal Impact (Por Evento)")
     st.markdown("Selecione um evento analisado abaixo para visualizar o relatório detalhado do Gemini avaliando o impacto causal deste pico de investimento.")
     
     if os.path.exists(st.session_state['active_config_path']):
@@ -401,7 +401,7 @@ with tab2:
                     st.markdown(md_content)
                     
                     st.markdown("---")
-                    st.markdown("### 📈 Gráficos da Análise")
+                    st.markdown("### Gráficos da Análise")
                     png_files = glob.glob(os.path.join(selected_dir, "*.png"))
                     if png_files:
                         for png_file in sorted(png_files):

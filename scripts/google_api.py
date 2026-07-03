@@ -70,7 +70,7 @@ def authenticate_gemini(api_key=None):
         api_key = os.environ.get("GEMINI_API_KEY")
     
     if not api_key:
-        print("❌ ERROR: No Gemini API key found. Please set the GEMINI_API_KEY environment variable.")
+        print("ERROR: No Gemini API key found. Please set the GEMINI_API_KEY environment variable.")
         return None
         
     try:
@@ -83,7 +83,7 @@ def authenticate_gemini(api_key=None):
                 if "generateContent" in m.supported_generation_methods:
                     available_models.append(m.name)
         except Exception as list_err:
-            print(f"⚠️ Warning: Could not list models: {list_err}. Defaulting to fallbacks.")
+            print(f"Warning: Could not list models: {list_err}. Defaulting to fallbacks.")
 
         selected_model = "gemini-1.5-flash"  # Default fallback
         

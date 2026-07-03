@@ -57,7 +57,7 @@ def find_events(df, company_name, increase_ratio, decrease_ratio, post_event_day
     Finds all significant investment changes, groups overlapping events into a single
     consolidated event per week, and returns the final map.
     """
-    print("\n" + "="*50 + "\n🔎 Starting Comprehensive Event Detection & Grouping...\n" + "="*50)
+    print("\n" + "="*50 + "\nStarting Comprehensive Event Detection & Grouping...\n" + "="*50)
     try:
         df = df.rename(columns={'Product Group': 'product_group', 'Date': 'dates'})
         
@@ -124,13 +124,13 @@ def find_events(df, company_name, increase_ratio, decrease_ratio, post_event_day
             os.makedirs(output_dir, exist_ok=True)
             output_filepath = os.path.join(output_dir, 'detected_events.csv')
             event_map_df.to_csv(output_filepath, index=False)
-            print(f"   - ✅ Detected events saved to: {output_filepath}")
+            print(f"   - Detected events saved to: {output_filepath}")
         # --- End New Code ---
 
         return event_map_df, None, None
 
     except (KeyError, TypeError) as e:
-        print(f"❌ Error processing data for event detection. Please check your input file columns. Details: {e}")
+        print(f"Error processing data for event detection. Please check your input file columns. Details: {e}")
         return pd.DataFrame(), None, None
 
 def run_causal_impact_analysis(kpi_df, daily_investment_df, market_trends_df, performance_df, pre_period, post_period, event_name, product_group, model_params, config):
@@ -307,7 +307,7 @@ def run_causal_impact_analysis(kpi_df, daily_investment_df, market_trends_df, pe
         
         return results_dict, line_chart_df, investment_bar_df, sessions_bar_df, accuracy_df
     except Exception as e:
-        print(f"❌ An unexpected error occurred during causal impact analysis: {e}")
+        print(f"An unexpected error occurred during causal impact analysis: {e}")
         return None, None, None, None, None
 
 def _train_response_model(model_data, product_group, config):
@@ -315,7 +315,7 @@ def _train_response_model(model_data, product_group, config):
     Trains the ad-stock and saturation model on INCREMENTAL KPIs by first
     modeling and subtracting the baseline performance.
     """
-    print("\n" + "="*50 + "\n🔎 Training Response Model for Projection on INCREMENTAL Data...\n" + "="*50)
+    print("\n" + "="*50 + "\nTraining Response Model for Projection on INCREMENTAL Data...\n" + "="*50)
     
     event_channels = [ch.strip() for ch in product_group.split(',')]
     valid_event_channels = [ch for ch in event_channels if ch in model_data.columns]
@@ -368,7 +368,7 @@ def _train_response_model(model_data, product_group, config):
         best_k, best_s = popt
         print(f"   - Best saturation params (incremental data): k={best_k:.2f}, s={best_s:.2f}")
     except (RuntimeError, ValueError) as e:
-        print(f"   - ⚠️ WARNING: Could not find optimal saturation curve for incremental data. Using defaults. Error: {e}")
+        print(f"   - WARNING: Could not find optimal saturation curve for incremental data. Using defaults. Error: {e}")
 
     # --- 3. Calculate Final Parameters ---
     # The scaler should now be based on the max of the incremental KPI
@@ -397,14 +397,14 @@ def _train_response_model(model_data, product_group, config):
     hist_avg_kpi = base_kpi_avg + (historical_saturated_response * max_kpi_scaler)
 
     model_params = {'alpha': best_alpha, 'k': best_k, 's': best_s, 'scaler': max_kpi_scaler, 'base_kpi': base_kpi_avg}
-    print("   - ✅ Incremental projection model training complete.")
+    print("   - Incremental projection model training complete.")
     return best_alpha, best_k, best_s, max_kpi_scaler, hist_avg_investment, hist_avg_kpi, model_params, channel_proportions
 
 def run_opportunity_projection(kpi_df, daily_investment_df, market_trends_df, product_group, config):
     """
     Trains a new response model on all data and then finds the optimal investment sweet spot.
     """
-    print("\n" + "="*50 + "\n🎯 Finding the Investment Sweet Spot & Projecting Opportunity...\n" + "="*50)
+    print("\n" + "="*50 + "\nFinding the Investment Sweet Spot & Projecting Opportunity...\n" + "="*50)
     optimization_target = config.get('optimization_target', 'REVENUE').upper()
     
     try:
@@ -545,7 +545,7 @@ def run_opportunity_projection(kpi_df, daily_investment_df, market_trends_df, pr
 
     except Exception as e:
         import traceback
-        print(f"❌ An error occurred in the sweet spot calculation: {e}")
+        print(f"An error occurred in the sweet spot calculation: {e}")
         traceback.print_exc()
         return pd.DataFrame(), pd.DataFrame(), {}, {}, {}, {}, {}, {}, {}
 
@@ -584,7 +584,7 @@ def find_optimal_historical_mix(kpi_df, daily_investment_df):
     weekly_df = weekly_df[weekly_df['Total_Investment'] > 0]
     
     if weekly_df.empty:
-        print("   - ⚠️ No historical investment data to analyze for optimal mix.")
+        print("   - No historical investment data to analyze for optimal mix.")
         return None
 
     # Identify the top 10% most efficient weeks
@@ -592,12 +592,12 @@ def find_optimal_historical_mix(kpi_df, daily_investment_df):
     top_weeks = weekly_df[weekly_df['Efficiency_Ratio'] >= top_quantile]
     
     if top_weeks.empty:
-        print("   - ⚠️ Could not identify top efficiency weeks.")
+        print("   - Could not identify top efficiency weeks.")
         return None
 
     # Calculate the investment share for each channel during these top weeks
     top_weeks_investment = top_weeks[investment_pivot.columns]
     optimal_mix = top_weeks_investment.sum() / top_weeks_investment.sum().sum()
     
-    print(f"   - ✅ Found optimal historical mix from top {len(top_weeks)} weeks.")
+    print(f"   - Found optimal historical mix from top {len(top_weeks)} weeks.")
     return optimal_mix.to_dict()

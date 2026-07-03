@@ -17,7 +17,7 @@ sys.path.append(os.path.abspath('scripts'))
 try:
     import analysis
 except ImportError as e:
-    print(f"❌ ERROR: Failed to import the 'analysis' module. Make sure it's in the 'scripts' directory.")
+    print(f"ERROR: Failed to import the 'analysis' module. Make sure it's in the 'scripts' directory.")
     print(f"   Details: {e}")
     sys.exit(1)
 
@@ -152,7 +152,7 @@ def save_opportunity_curve_plot(response_curve_df, baseline_point, max_efficienc
     """
     # 1. Safety Check
     if response_curve_df is None or response_curve_df.empty:
-        print(f"   - ⚠️ WARNING: Response curve data is empty. Skipping plot generation for {filename}.")
+        print(f"   - WARNING: Response curve data is empty. Skipping plot generation for {filename}.")
         return
 
     # 2. Data Preparation
@@ -264,7 +264,7 @@ def save_opportunity_curve_plot(response_curve_df, baseline_point, max_efficienc
     plt.tight_layout()
     plt.savefig(filename, dpi=300)
     plt.close(fig)
-    print(f"   - ✅ Chart saved to {filename}")
+    print(f"   - Chart saved to {filename}")
 
 def create_comparative_saturation_md(scenarios, output_filename, kpi_projections=None, kpi_name='KPIs'):
     """
@@ -395,7 +395,7 @@ Para cada nível de orçamento projetado nas tabelas anteriores, a análise apre
         f.write(markdown_content)
         f.write(methodology)
 
-    print(f"   - ✅ Successfully generated comparative MD file at: {output_filename}")
+    print(f"   - Successfully generated comparative MD file at: {output_filename}")
 
 def save_investment_distribution_donuts(donut_scenarios, output_path, total_investment=None):
     """
@@ -404,7 +404,7 @@ def save_investment_distribution_donuts(donut_scenarios, output_path, total_inve
     """
     try:
         if not donut_scenarios:
-            print("   - ⚠️ WARNING: No budget scenarios to plot.")
+            print("   - WARNING: No budget scenarios to plot.")
             return
 
         num_scenarios = len(donut_scenarios)
@@ -464,9 +464,9 @@ def save_investment_distribution_donuts(donut_scenarios, output_path, total_inve
         
         plt.savefig(output_path, bbox_inches='tight', dpi=150)
         plt.close(fig)
-        print(f"   - ✅ Donut charts saved to {output_path}")
+        print(f"   - Donut charts saved to {output_path}")
 
     except Exception as e:
-        print(f"   - ❌ ERROR: Could not generate donut charts. Details: {e}")
+        print(f"   - ERROR: Could not generate donut charts. Details: {e}")
         import traceback
         traceback.print_exc()
