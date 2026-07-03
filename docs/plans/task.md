@@ -2,9 +2,6 @@
 
 | Task | Status | Description |
 | :--- | :---: | :--- |
-| **1. Explore project context** | [x] | Checked project files, `streamlit_app.py`, and dependencies. |
-| **2. Ask clarifying questions** | [x] | Clarified SQLite as database, file-based project associations, and 1-to-N ownership. |
-| **3. Propose 2-3 approaches** | [x] | Proposed approaches; selected Approach 1 (native `sqlite3` + `hashlib`). |
-| **4. Present design sections** | [x] | Present architecture, database schema, user flow, and security design. |
-| **5. Write design doc** | [x] | Document the approved design in a markdown file and commit it. |
-| **6. Transition to implementation** | [x] | Create the detailed `implementation_plan.md` using the writing-plans skill. |
+| **Task 1: Database Helper Implementation** | [x] | Implement `db.py` helper (hashing, CRUD, project ownership, delete) and `test_db.py` unit tests. |
+| **Task 2: Streamlit App Integration & Login Interface** | [x] | Integrate Login/Registration UI and session state control. |
+| **Task 3: Project Filtering, Isolated Storage & IDOR Verification** | [x] | Restrict selection lists, isolate directories, and add project deletion with IDOR check. |
