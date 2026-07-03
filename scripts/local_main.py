@@ -247,9 +247,7 @@ def main(config, args):
                             continue
 
                         # --- Optimization: R-squared threshold from config ---
-                        r_squared_threshold = max(
-                            0.5, config.get("r_squared_threshold", 0.6)
-                        )
+                        r_squared_threshold = config.get("r_squared_threshold", 0.6)
 
                         is_significant = (
                             results_data["p_value"] < config["p_value_threshold"]

@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 import os
 
 import analysis
-import google_api
+
 import recommendations
 import saturation_curve
 import elasticity_analysis as mmm_analysis
@@ -245,9 +245,7 @@ def main(config, args):
                             continue
 
                         # --- Optimization: R-squared threshold from config ---
-                        r_squared_threshold = max(
-                            0.5, config.get("r_squared_threshold", 0.6)
-                        )
+                        r_squared_threshold = config.get("r_squared_threshold", 0.6)
 
                         is_significant = (
                             results_data["p_value"] < config["p_value_threshold"]
