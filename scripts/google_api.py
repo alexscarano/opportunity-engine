@@ -54,18 +54,18 @@ def authenticate_google_services():
         slides_service = build('slides', 'v1', credentials=creds)
         sheets_service = build('sheets', 'v4', credentials=creds)
         gc = gspread.authorize(creds)
-        print("✅ Google services authenticated successfully.")
+        print("Google services authenticated successfully.")
         return drive_service, slides_service, sheets_service, gc
     except FileNotFoundError as e:
-        print(f"❌ {e}")
+        print(f"Error: {e}")
         return None, None, None, None
     except Exception as e:
-        print(f"❌ An unexpected error occurred during authentication: {e}")
+        print(f"An unexpected error occurred during authentication: {e}")
         return None, None, None, None
 
 
 def authenticate_gemini(api_key=None):
-    """Authenticates the Gemini client using an API key."""
+    """Authenticates the Gemini client using an API key and selects the best available model."""
     if api_key is None:
         api_key = os.environ.get("GEMINI_API_KEY")
     
@@ -75,13 +75,41 @@ def authenticate_gemini(api_key=None):
         
     try:
         genai.configure(api_key=api_key)
-        # Using a valid model name for Gemini
-        gemini_client = genai.GenerativeModel('gemini-1.5-pro')
-        print("✅ Gemini client authenticated successfully.")
+        
+        # Detect available models supporting generateContent
+        available_models = []
+        try:
+            for m in genai.list_models():
+                if "generateContent" in m.supported_generation_methods:
+                    available_models.append(m.name)
+        except Exception as list_err:
+            print(f"⚠️ Warning: Could not list models: {list_err}. Defaulting to fallbacks.")
+
+        selected_model = "gemini-1.5-flash"  # Default fallback
+        
+        if available_models:
+            print(f"ℹ️ Available models: {available_models}")
+            priority = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
+            found = False
+            for p_model in priority:
+                for a_model in available_models:
+                    if a_model == p_model or a_model.endswith(f"/{p_model}"):
+                        selected_model = a_model
+                        found = True
+                        break
+                if found:
+                    break
+            if not found:
+                selected_model = available_models[0]
+                
+        print(f"Selecting model: {selected_model}")
+        gemini_client = genai.GenerativeModel(selected_model)
+        print("Gemini client authenticated successfully.")
         return gemini_client
     except Exception as e:
-        print(f"❌ An unexpected error occurred during Gemini authentication: {e}")
+        print(f"An unexpected error occurred during Gemini authentication: {e}")
         return None
+
 
 
 def get_or_create_folder_id(drive_service, folder_path):
@@ -102,7 +130,7 @@ def get_or_create_folder_id(drive_service, folder_path):
                 parent_id = new_folder.get('id')
         return parent_id
     except HttpError as e:
-        print(f"❌ A Google Drive API error occurred while finding/creating the output folder: {e}")
+        print(f"A Google Drive API error occurred while finding/creating the output folder: {e}")
         return None
 
 def download_file_from_drive(drive_service, file_id, destination):
@@ -112,13 +140,13 @@ def download_file_from_drive(drive_service, file_id, destination):
         request = drive_service.files().get_media(fileId=file_id)
         with open(destination, 'wb') as f:
             f.write(request.execute())
-        print(f"   - ✅ Downloaded successfully to '{destination}'")
+        print(f"   - Downloaded successfully to '{destination}'")
         return True
     except HttpError as e:
-        print(f"❌ A Google Drive API error occurred while downloading the file: {e}")
+        print(f"A Google Drive API error occurred while downloading the file: {e}")
         return False
     except Exception as e:
-        print(f"❌ An unexpected error occurred during file download: {e}")
+        print(f"An unexpected error occurred during file download: {e}")
         return False
 
 def read_sheet_data(gc, sheet_id):
@@ -128,11 +156,11 @@ def read_sheet_data(gc, sheet_id):
         spreadsheet = gc.open_by_key(sheet_id)
         worksheet = spreadsheet.sheet1
         data = worksheet.get_all_values()
-        print(f"   - ✅ Read {len(data)} rows successfully.")
+        print(f"   - Read {len(data)} rows successfully.")
         return data
     except gspread.exceptions.SpreadsheetNotFound:
-        print(f"❌ ERROR: The Google Sheet with ID '{sheet_id}' was not found. Please check the ID and your permissions.")
+        print(f"ERROR: The Google Sheet with ID '{sheet_id}' was not found. Please check the ID and your permissions.")
         return None
     except Exception as e:
-        print(f"❌ An unexpected error occurred while reading the Google Sheet: {e}")
+        print(f"An unexpected error occurred while reading the Google Sheet: {e}")
         return None
