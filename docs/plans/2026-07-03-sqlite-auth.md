@@ -2,15 +2,15 @@
 
 > **For Antigravity:** REQUIRED WORKFLOW: Use `.agent/workflows/execute-plan.md` to execute this plan in single-flow mode.
 
-**Goal:** Implement user authentication (signup/login) and project isolation using Python's native `sqlite3` and `hashlib` modules to prevent IDOR vulnerabilities.
+**Goal:** Implement user authentication (signup/login), project isolation, and project deletion using Python's native `sqlite3` and `hashlib` modules to prevent IDOR vulnerabilities.
 
-**Architecture:** Create a `scripts/db.py` helper to manage user registration, verification, and project ownership. Integrate this helper into `scripts/streamlit_app.py` to restrict project selection and configuration loading to the authenticated user.
+**Architecture:** Create a `scripts/db.py` helper to manage user registration, verification, project ownership, and project deletion. Integrate this helper into `scripts/streamlit_app.py` to restrict project selection, configuration loading, and deletion to the authenticated user.
 
 **Tech Stack:** Python 3.13, Streamlit, SQLite (`sqlite3` built-in), Hashlib (`hashlib` built-in).
 
 ---
 
-### Task 1: Database Helper Implementation
+### Task 1: Database Helper Implementation (including Deletion)
 
 **Files:**
 - Create: `scripts/db.py`
@@ -23,7 +23,7 @@
 import unittest
 import os
 import tempfile
-from scripts.db import init_db, create_user, verify_user, add_user_project, get_user_projects, verify_project_ownership
+from scripts.db import init_db, create_user, verify_user, add_user_project, get_user_projects, verify_project_ownership, delete_user_project
 
 class TestDBHelper(unittest.TestCase):
     def setUp(self):
@@ -60,6 +60,20 @@ class TestDBHelper(unittest.TestCase):
         projects = get_user_projects(user1, self.db_path)
         self.assertEqual(len(projects), 1)
         self.assertEqual(projects[0][0], "Proj A")
+
+    def test_delete_project(self):
+        user1 = create_user("user1", "pass", self.db_path)
+        user2 = create_user("user2", "pass", self.db_path)
+        add_user_project(user1, "Proj A", "inputs/user_1/Proj_A/config.json", self.db_path)
+        
+        # Verify deletion success for owner
+        self.assertTrue(delete_user_project(user1, "Proj A", self.db_path))
+        self.assertFalse(verify_project_ownership(user1, "inputs/user_1/Proj_A/config.json", self.db_path))
+        
+        # Verify deletion of non-owned project does not succeed/impact others
+        add_user_project(user2, "Proj B", "inputs/user_2/Proj_B/config.json", self.db_path)
+        self.assertFalse(delete_user_project(user1, "Proj B", self.db_path)) # user1 tries to delete user2's project
+        self.assertTrue(verify_project_ownership(user2, "inputs/user_2/Proj_B/config.json", self.db_path))
 
 if __name__ == "__main__":
     unittest.main()
@@ -171,6 +185,16 @@ def verify_project_ownership(user_id: int, config_path: str, db_path="data/datab
             (user_id, config_path)
         )
         return cursor.fetchone() is not None
+
+def delete_user_project(user_id: int, project_name: str, db_path="data/database.db") -> bool:
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM user_projects WHERE user_id = ? AND project_name = ?",
+            (user_id, project_name.strip())
+        )
+        conn.commit()
+        return cursor.rowcount > 0
 ```
 
 **Step 4: Run test to verify it passes**
@@ -182,7 +206,7 @@ Expected: PASS
 
 ```bash
 git add scripts/db.py tests/test_db.py
-git commit -m "feat: implement database helper with hashing and project ownership"
+git commit -m "feat: implement database helper with hashing, project ownership, and deletion"
 ```
 
 ---
@@ -196,7 +220,7 @@ git commit -m "feat: implement database helper with hashing and project ownershi
 
 In `scripts/streamlit_app.py` at the imports section:
 ```python
-from db import init_db, create_user, verify_user, add_user_project, get_user_projects, verify_project_ownership
+from db import init_db, create_user, verify_user, add_user_project, get_user_projects, verify_project_ownership, delete_user_project
 init_db()  # Initializes the default SQLite DB at data/database.db
 ```
 
@@ -258,7 +282,7 @@ git commit -m "feat: integrate user authentication and logout UI in streamlit"
 
 ---
 
-### Task 3: Project Filtering, Isolated Storage & IDOR Verification
+### Task 3: Project Filtering, Isolated Storage & IDOR Verification (including Deletion UI)
 
 **Files:**
 - Modify: `scripts/streamlit_app.py`
@@ -300,9 +324,51 @@ add_user_project(st.session_state['user_id'], advertiser_name, config_file_path)
 st.session_state['active_config_path'] = config_file_path
 ```
 
-**Step 4: Commit**
+**Step 4: Implement project deletion UI with safety controls**
+
+Add deletion button in the sidebar under selected project, showing a confirmation step and executing safe cleanup:
+```python
+if project_options and st.session_state.get('active_config_path'):
+    if st.sidebar.button("Excluir Projeto Atual", key="delete_proj_btn"):
+        st.session_state['show_delete_confirm'] = True
+
+if st.session_state.get('show_delete_confirm'):
+    st.sidebar.warning("Deseja mesmo excluir o projeto e todos os seus arquivos?")
+    col_del1, col_del2 = st.sidebar.columns(2)
+    with col_del1:
+        if st.button("Sim, Excluir", key="confirm_delete_btn"):
+            path_to_delete = st.session_state['active_config_path']
+            # Verify ownership to prevent IDOR on deletion
+            if verify_project_ownership(st.session_state['user_id'], path_to_delete):
+                import shutil
+                # Delete files on disk
+                project_dir = os.path.dirname(path_to_delete)
+                if os.path.exists(project_dir):
+                    shutil.rmtree(project_dir)
+                
+                # Delete from outputs too
+                output_dir = project_dir.replace("inputs", "outputs")
+                if os.path.exists(output_dir):
+                    shutil.rmtree(output_dir)
+                
+                # Delete from SQLite
+                delete_user_project(st.session_state['user_id'], selected_project)
+                
+                st.success(f"Projeto '{selected_project}' excluído.")
+                st.session_state['active_config_path'] = ""
+                st.session_state['show_delete_confirm'] = False
+                st.rerun()
+            else:
+                st.error("Erro: Acesso não autorizado.")
+    with col_del2:
+        if st.button("Cancelar", key="cancel_delete_btn"):
+            st.session_state['show_delete_confirm'] = False
+            st.rerun()
+```
+
+**Step 5: Commit**
 
 ```bash
 git add scripts/streamlit_app.py
-git commit -m "feat: enforce project isolation, IDOR guards, and user-specific directories"
+git commit -m "feat: enforce project isolation, IDOR guards, deletion UI, and file cleanup"
 ```
