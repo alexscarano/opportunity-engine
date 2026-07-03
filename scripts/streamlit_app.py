@@ -360,9 +360,19 @@ with tab1:
                 "Target ROAS Mínimo Permissível", value=0.0, help="0 = Sem restrição"
             )
 
-        submit_btn = st.form_submit_button(
-            "Construir Motor de Oportunidades", type="primary"
-        )
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            submit_btn = st.form_submit_button(
+                "Construir Motor de Oportunidades", type="primary", use_container_width=True
+            )
+        with col_btn2:
+            save_settings_btn = st.form_submit_button(
+                "Salvar Configurações", type="secondary", use_container_width=True
+            )
+
+    if save_settings_btn:
+        update_user_api_key(st.session_state['user_id'], gemini_key)
+        st.success("Configurações salvas com sucesso!")
 
     if submit_btn:
         # Persist user's Gemini API Key in SQLite
