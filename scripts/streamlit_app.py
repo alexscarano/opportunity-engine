@@ -255,12 +255,14 @@ with tab1:
             }))
             
             log_container = st.empty()
+            status_container = st.empty()
             env = os.environ.copy()
             if gemini_key:
                 env["GEMINI_API_KEY"] = gemini_key
             env["PYTHONPATH"] = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
             
-            python_bin = "venv/bin/python" if os.path.exists("venv/bin/python") else "python3"
+            import sys
+            python_bin = sys.executable
             
             if gemini_key:
                 target_main_script = os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')), 'scripts', 'local_main.py')
@@ -288,11 +290,11 @@ with tab1:
             return_code = process.wait()
             
             if return_code == 0:
-                log_container.success("🎯 Análise Causal e Otimização concluídas com sucesso!")
+                status_container.success("🎯 Análise Causal e Otimização concluídas com sucesso!")
                 st.balloons()
                 st.info("🔄 Os dados foram gerados! Explore as abas de Causal Impact e Elasticidade.")
             else:
-                log_container.error("❌ Houve um erro na execução do motor. Verifique os logs acima.")
+                status_container.error("❌ Houve um erro na execução do motor. Verifique os logs acima.")
 
 with tab2:
     st.header("📊 Análise de Causal Impact (Por Evento)")
