@@ -391,3 +391,44 @@ def build_sessions_bar_chart(sessions_bar_df, kpi_name="kpi"):
         margin=dict(l=20, r=20, t=50, b=20),
     )
     return fig
+
+
+def build_response_curve_individual(channel_df, channel_name):
+    """Spend vs Projected KPI for a single channel, with historical avg and recommended spend markers."""
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=channel_df["Channel_Spend"],
+            y=channel_df["Projected_Total_KPIs"],
+            mode="lines",
+            name=channel_name,
+            line=dict(color="blue", width=2),
+        )
+    )
+
+    hist_spend = channel_df["Historical_Avg"].iloc[0]
+    fig.add_vline(
+        x=hist_spend,
+        line_dash="dash",
+        line_color="gray",
+        annotation_text=f"Historical Avg (R$ {hist_spend:,.2f})",
+        annotation_position="top",
+    )
+
+    rec_spend = channel_df["Recommended"].iloc[0]
+    if pd.notna(rec_spend):
+        fig.add_vline(
+            x=rec_spend,
+            line_dash="dash",
+            line_color="red",
+            annotation_text=f"Recommended (R$ {rec_spend:,.2f})",
+            annotation_position="bottom",
+        )
+
+    fig.update_layout(
+        title=f"Response Curve: {channel_name}",
+        xaxis_title="Daily Investment",
+        yaxis_title="Projected Total Daily KPIs",
+        margin=dict(l=20, r=20, t=50, b=20),
+    )
+    return fig

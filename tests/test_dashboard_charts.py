@@ -18,6 +18,7 @@ from dashboard_charts import (
     build_causal_line_chart,
     build_investment_bar_chart,
     build_sessions_bar_chart,
+    build_response_curve_individual,
 )
 
 
@@ -239,6 +240,29 @@ class TestBuildSessionsBarChart(unittest.TestCase):
         self.assertEqual(list(fig.data[0].x), ["Cliques Previsto", "Cliques Real"])
         self.assertEqual(list(fig.data[0].y), [100, 150])
         self.assertEqual(list(fig.data[0].marker.color), ["red", "black"])
+
+
+class TestBuildResponseCurveIndividual(unittest.TestCase):
+
+    def setUp(self):
+        self.channel_df = pd.DataFrame({
+            "Channel": ["AWIN"] * 3,
+            "Channel_Spend": [0, 2500, 5000],
+            "Projected_Total_KPIs": [30800, 30800, 30800],
+            "Historical_Avg": [4977.94] * 3,
+            "Recommended": [0.0] * 3,
+        })
+
+    def test_plots_curve_and_historical_avg_line(self):
+        fig = build_response_curve_individual(self.channel_df, "AWIN")
+        self.assertEqual(list(fig.data[0].y), [30800, 30800, 30800])
+        self.assertEqual(len(fig.layout.shapes), 2)  # historical avg + recommended
+
+    def test_skips_recommended_line_when_nan(self):
+        df = self.channel_df.copy()
+        df["Recommended"] = np.nan
+        fig = build_response_curve_individual(df, "AWIN")
+        self.assertEqual(len(fig.layout.shapes), 1)  # only historical avg
 
 
 if __name__ == "__main__":
