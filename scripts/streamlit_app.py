@@ -312,7 +312,6 @@ with tab1:
                 env["GEMINI_API_KEY"] = gemini_key
             env["PYTHONPATH"] = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
             env["PYTHONIOENCODING"] = "utf-8"
-            env["PYTHONUNBUFFERED"] = "1"
             
             import sys
             python_bin = sys.executable
@@ -328,7 +327,6 @@ with tab1:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 encoding="utf-8",
-                errors="replace",
                 env=env,
                 cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
             )
@@ -430,7 +428,6 @@ with tab2:
 with tab3:
     st.sidebar.markdown("---")
 
-    @st.cache_data(show_spinner="Carregando modelos de elasticidade...")
     def load_data(config_path):
         # Cache buster comment to force Streamlit to reload data 
         try:
