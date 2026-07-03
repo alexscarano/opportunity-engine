@@ -5,6 +5,7 @@ and global brand levels.
 """
 
 import os
+import traceback
 import pandas as pd
 import analysis
 import presentation
@@ -314,8 +315,6 @@ def run_global_saturation_analysis(config):
                     # --- End New Scenario ---
 
             except Exception as e:
-                import traceback
-
                 print(
                     f"   - WARNING: Could not generate combined saturation curve for all channels. Details: {e}"
                 )
@@ -484,7 +483,5 @@ Para cada cenário, a distribuição do investimento entre os canais é feita da
         print("=" * 50 + "\nGlobal Saturation Analysis Complete.\n" + "=" * 50)
 
     except Exception as e:
-        import traceback
-
         print(f"A critical error occurred during the global saturation analysis: {e}")
         traceback.print_exc()

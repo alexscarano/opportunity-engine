@@ -97,14 +97,14 @@ class TestDBHelper(unittest.TestCase):
 
     def test_api_key_persistence(self):
         user = create_user("user1", "pass", self.db_path)
-        
+
         # Initially None
         self.assertIsNone(get_user_api_key(user, self.db_path))
-        
+
         # Update and verify
         update_user_api_key(user, "AIzaSyDummyKey", self.db_path)
         self.assertEqual(get_user_api_key(user, self.db_path), "AIzaSyDummyKey")
-        
+
         # Update to empty/None and verify
         update_user_api_key(user, "", self.db_path)
         self.assertIsNone(get_user_api_key(user, self.db_path))

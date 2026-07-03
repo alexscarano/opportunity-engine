@@ -18,11 +18,9 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import os
-import sys
+import traceback
 import holidays
 
-# Add the script's directory to the Python path to allow for relative imports
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import data_preprocessor
 
 

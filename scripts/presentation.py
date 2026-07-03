@@ -5,23 +5,47 @@ including charts, markdown files, and data for HTML reports.
 """
 
 import os
+import traceback
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
-from matplotlib.ticker import FuncFormatter
 import numpy as np
-import sys
-
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 try:
     import analysis
 except ImportError as e:
-    print(
-        f"ERROR: Failed to import the 'analysis' module. Make sure it's in the 'scripts' directory."
-    )
+    import sys
+    print(f"ERROR: Failed to import the 'analysis' module. Make sure it's in the 'scripts' directory.")
     print(f"   Details: {e}")
     sys.exit(1)
+
+
+def create_presentation_dataframe(causal_results, config, post_period):
+    """Shared helper: builds the presentation CSV DataFrame from causal results."""
+    conversion_rate = config.get("conversion_rate_from_kpi_to_bo", 0)
+    avg_ticket = config.get("average_ticket", 0)
+    causal_incremental_kpi = causal_results.get("absolute_lift", 0)
+    causal_incremental_orders = causal_incremental_kpi * conversion_rate
+    data = {
+        "p_value_limiar": config["p_value_threshold"],
+        "taxa_de_conversao_kpi_para_pedidos": conversion_rate,
+        "ticket_medio": avg_ticket,
+        "precisao_preditiva_mape_pct": causal_results.get("mape", 0) * 100,
+        "confianca_estatistica_pct": (1 - causal_results.get("p_value", 1)) * 100,
+        "estatistica_p_value": causal_results.get("p_value", 1),
+        "estatistica_r_squared": causal_results.get("model_r_squared", 0),
+        "estatistica_mape": causal_results.get("mape", 0),
+        "estatistica_mae": causal_results.get("mae", 0),
+        "causal_periodo_inicio": post_period[0],
+        "causal_periodo_fim": post_period[1],
+        "causal_aumento_investimento_pct": causal_results.get("investment_change_pct", 0),
+        "causal_kpis_incrementais": causal_incremental_kpi,
+        "causal_pedidos_incrementais": causal_incremental_orders,
+        "causal_receita_incremental": causal_incremental_orders * avg_ticket,
+        "causal_investimento_pre_evento": causal_results.get("total_investment_pre_period", 0),
+        "causal_investimento_durante_evento": causal_results.get("total_investment_post_period", 0),
+    }
+    return pd.DataFrame(list(data.items()), columns=["Metrica", "Valor"])
 
 
 def format_number(n, currency=False):
@@ -72,7 +96,9 @@ def save_accuracy_plot(results_data, accuracy_df, output_path, kpi_name="kpi"):
     )
 
     ax.set_title(
-        f"Acurácia do Modelo: Real vs. Previsto (Período Pré-Evento)", fontsize=18, pad=20
+        f"Acurácia do Modelo: Real vs. Previsto (Período Pré-Evento)",
+        fontsize=18,
+        pad=20,
     )
     ax.set_ylabel(kpi_name, fontsize=14)
 
@@ -135,7 +161,7 @@ def save_line_chart_plot(line_df, output_path, kpi_name="kpi"):
     ax2.tick_params(axis="y", labelcolor="blue")
 
     # Formatting and legends
-    ax1.set_title("Análise de Causal Impact: Real vs. Previsto", fontsize=18, pad=20)
+    ax1.set_title("Análise de Impacto Causal: Real vs. Previsto", fontsize=18, pad=20)
     fig.tight_layout()
 
     # Combine legends from both axes
@@ -183,7 +209,8 @@ def save_sessions_bar_plot(sessions_bar_df, output_path, kpi_name="kpi"):
 
     # Ensure colors map to the correct semantic meaning regardless of order
     colors = [
-        "red" if "Previsto" in str(x) or "Forecasted" in str(x) else "black" for x in sessions_bar_df.index
+        "red" if "Previsto" in str(x) or "Forecasted" in str(x) else "black"
+        for x in sessions_bar_df.index
     ]
 
     sessions_bar_df.plot(kind="bar", ax=ax, color=colors, legend=None)
@@ -371,10 +398,10 @@ def save_opportunity_curve_plot(
 
     # Set formatters for axes (with full integer for y-axis)
     ax.xaxis.set_major_formatter(
-        FuncFormatter(lambda x, p: currency_fmt(x).replace("R$", "R$ "))
+        mticker.FuncFormatter(lambda x, p: currency_fmt(x).replace("R$", "R$ "))
     )
     ax.yaxis.set_major_formatter(
-        FuncFormatter(lambda y, p: f"{y:,.0f}")
+        mticker.FuncFormatter(lambda y, p: f"{y:,.0f}")
     )  # .0f for full integer
 
     # --- Extend the x-axis ---
@@ -650,6 +677,4 @@ def save_investment_distribution_donuts(
 
     except Exception as e:
         print(f"   - ERROR: Could not generate donut charts. Details: {e}")
-        import traceback
-
         traceback.print_exc()

@@ -251,6 +251,13 @@ if os.path.dirname(__file__) not in sys.path:
 
 from db import init_db, create_user, verify_user, add_user_project, get_user_projects, verify_project_ownership, delete_user_project, rename_user_project, get_user_api_key, update_user_api_key, create_session, get_session
 from streamlit_cookies_controller import CookieController
+from dashboard_charts import (
+    build_icpa_curve,
+    build_revenue_roi_curve,
+    build_channel_mix_evolution,
+    build_channel_saturation_comparison,
+    build_events_overview,
+)
 
 init_db()
 # Restore session WITHOUT cookie component (synchronous, no rerun needed)
@@ -1396,6 +1403,73 @@ with tab3:
                 )
 
                 st.plotly_chart(fig_curve, use_container_width=True)
+
+                st.markdown("---")
+                st.markdown("### Curva de Custo Marginal (iCPA)")
+                st.markdown(
+                    "Mostra quanto custa cada KPI adicional em cada nível de investimento. "
+                    "Onde a curva cruza a linha de referência (seu Target CPA/iCPA definido na "
+                    "barra lateral) é o ponto em que o investimento incremental deixa de compensar."
+                )
+                st.plotly_chart(
+                    build_icpa_curve(
+                        df_plot,
+                        optimal_point,
+                        saturation_point,
+                        kpi_name=kpi_name,
+                        target_cpa=target_cpa,
+                        target_icpa=target_icpa,
+                    ),
+                    use_container_width=True,
+                )
+
+                if config.get("optimization_target") == "REVENUE":
+                    st.markdown("---")
+                    st.markdown("### Curva de Receita e ROI Incremental")
+                    st.markdown(
+                        "Eixo esquerdo: receita projetada (mensal) em cada nível de investimento. "
+                        "Eixo direito: ROI incremental — quanto retorno cada Real adicional investido "
+                        "está gerando."
+                    )
+                    st.plotly_chart(
+                        build_revenue_roi_curve(df_plot, kpi_name=kpi_name),
+                        use_container_width=True,
+                    )
+
+                st.markdown("---")
+                st.markdown("### Evolução do Mix de Canais por Orçamento")
+                st.markdown(
+                    "Mostra como a alocação recomendada entre canais (Modelo de Elasticidade) muda "
+                    "à medida que o orçamento total escala — útil para saber quais canais absorvem "
+                    "mais verba incremental conforme você investe mais."
+                )
+                st.plotly_chart(
+                    build_channel_mix_evolution(
+                        df_plot,
+                        baseline_monthly_inv=baseline_monthly_inv,
+                        optimal_monthly_inv=optimal_point["Monthly_Investment"],
+                    ),
+                    use_container_width=True,
+                )
+
+                ind_csv_path_overview = os.path.join(
+                    output_dir, "individual_response_curves_data.csv"
+                )
+                if os.path.exists(ind_csv_path_overview):
+                    st.markdown("---")
+                    st.markdown("### Comparativo de Saturação entre Canais")
+                    st.markdown(
+                        "Sobrepõe a curva de saturação de todos os canais, normalizada para 0-100% "
+                        "da própria faixa de cada canal — permite comparar a *velocidade* de saturação "
+                        "entre canais mesmo com escalas de investimento muito diferentes. Clique na "
+                        "legenda para isolar um canal."
+                    )
+                    st.plotly_chart(
+                        build_channel_saturation_comparison(
+                            pd.read_csv(ind_csv_path_overview)
+                        ),
+                        use_container_width=True,
+                    )
 
                 # --- NEW: Individual Curves Visualization ---
                 st.markdown("---")

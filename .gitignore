@@ -8,6 +8,16 @@ __pycache__/
 # IDE-specific files
 .vscode/
 .idea/
+.claude/
+.agent/
+
+# Runtime data (logs, db, generated inputs/outputs)
+data/
+inputs/
+outputs/
+exemplo_csv/
+*.log
+*.db
 
 
 # Allow essential scripts to be tracked

@@ -12,9 +12,9 @@ This script orchestrates the entire workflow:
 
 import argparse
 import warnings
+
 warnings.filterwarnings("ignore")
 import json
-import re
 import traceback
 import pandas as pd
 import numpy as np
@@ -37,53 +37,8 @@ from presentation import (
     save_opportunity_curve_plot,
     create_comparative_saturation_md,
     save_investment_distribution_donuts,
+    create_presentation_dataframe,
 )
-
-
-def _create_presentation_dataframe(causal_results, config, post_period):
-    """Creates a DataFrame with all data points for the presentation CSV."""
-    presentation_data = {}
-    conversion_rate = config.get("conversion_rate_from_kpi_to_bo", 0)
-    avg_ticket = config.get("average_ticket", 0)
-
-    # Assumptions
-    presentation_data["p_value_limiar"] = config["p_value_threshold"]
-    presentation_data["taxa_de_conversao_kpi_para_pedidos"] = conversion_rate
-    presentation_data["ticket_medio"] = avg_ticket
-    presentation_data["precisao_preditiva_mape_pct"] = (
-        causal_results.get("mape", 0) * 100
-    )
-    presentation_data["confianca_estatistica_pct"] = (
-        1 - causal_results.get("p_value", 1)
-    ) * 100
-    presentation_data["estatistica_p_value"] = causal_results.get("p_value", 1)
-    presentation_data["estatistica_r_squared"] = causal_results.get(
-        "model_r_squared", 0
-    )
-    presentation_data["estatistica_mape"] = causal_results.get("mape", 0)
-    presentation_data["estatistica_mae"] = causal_results.get("mae", 0)
-
-    # Causal Impact Results
-    causal_incremental_kpi = causal_results.get("absolute_lift", 0)
-    causal_incremental_orders = causal_incremental_kpi * conversion_rate
-    causal_incremental_revenue = causal_incremental_orders * avg_ticket
-
-    presentation_data["causal_periodo_inicio"] = post_period[0]
-    presentation_data["causal_periodo_fim"] = post_period[1]
-    presentation_data["causal_aumento_investimento_pct"] = causal_results.get(
-        "investment_change_pct", 0
-    )
-    presentation_data["causal_kpis_incrementais"] = causal_incremental_kpi
-    presentation_data["causal_pedidos_incrementais"] = causal_incremental_orders
-    presentation_data["causal_receita_incremental"] = causal_incremental_revenue
-    presentation_data["causal_investimento_pre_evento"] = causal_results.get(
-        "total_investment_pre_period", 0
-    )
-    presentation_data["causal_investimento_durante_evento"] = causal_results.get(
-        "total_investment_post_period", 0
-    )
-
-    return pd.DataFrame(list(presentation_data.items()), columns=["Metrica", "Valor"])
 
 
 import data_preprocessor
@@ -405,7 +360,7 @@ def main(config, args):
                                 )
 
                                 # Generate and save the comprehensive presentation data CSV for this event
-                                presentation_df = _create_presentation_dataframe(
+                                presentation_df = create_presentation_dataframe(
                                     results_data, config, post_period
                                 )
                                 csv_filename = os.path.join(
