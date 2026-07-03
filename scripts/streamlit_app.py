@@ -1252,6 +1252,16 @@ with tab3:
             df["iCPA"] = df["Incremental_Investment"] / df["Incremental_KPI"]
             df["iCPA"] = df["iCPA"].replace([np.inf, -np.inf], float("nan")).fillna(0)
 
+            if "Projected_Revenue" in df.columns:
+                df["ROAS"] = (df["Projected_Revenue"] / df["Monthly_Investment"]).replace([np.inf, -np.inf], float("nan"))
+                df["iROAS"] = (df["Incremental_Revenue"] / df["Incremental_Investment"]).replace([np.inf, -np.inf], float("nan")).fillna(0)
+
+            df["Pct_Incrementality"] = np.where(
+                df["Projected_Total_KPIs"] > 0,
+                df["Incremental_KPI"] / df["Projected_Total_KPIs"] * 100,
+                0.0,
+            )
+
             st.sidebar.header("Filtros de Limitação")
             st.sidebar.markdown(
                 "Use estes limites para encontrar o ponto ótimo na curva."
@@ -1260,16 +1270,28 @@ with tab3:
             max_inv_val = float(df["Monthly_Investment"].max())
             min_inv_val = float(df["Monthly_Investment"].min())
 
-            max_budget_millions = st.sidebar.slider(
-                "Orçamento Mensal Máximo",
-                min_value=min_inv_val / 1e6,
+            # --- Orçamento ---
+            budget_col1, budget_col2 = st.sidebar.columns(2)
+            min_budget_millions = budget_col1.number_input(
+                "Orçamento Mín. (M)",
+                min_value=0.0,
+                max_value=max_inv_val / 1e6,
+                value=min_inv_val / 1e6,
+                step=0.05,
+                format="%.2f",
+            )
+            max_budget_millions = budget_col2.number_input(
+                "Orçamento Máx. (M)",
+                min_value=0.0,
                 max_value=max_inv_val / 1e6,
                 value=max_inv_val / 1e6,
                 step=0.05,
-                format="%.2fM",
+                format="%.2f",
             )
+            min_budget = min_budget_millions * 1e6
             max_budget = max_budget_millions * 1e6
 
+            # --- CPA ---
             use_cpa_target = st.sidebar.checkbox(
                 "Aplicar Limite de Target CPA", value=False
             )
@@ -1287,6 +1309,7 @@ with tab3:
                     format="%.2f",
                 )
 
+            # --- iCPA ---
             use_icpa_target = st.sidebar.checkbox(
                 "Aplicar Limite de iCPA Marginal", value=False
             )
@@ -1304,13 +1327,91 @@ with tab3:
                     format="%.2f",
                 )
 
-            filtered_df = df[df["Monthly_Investment"] <= max_budget]
+            # --- ROAS ---
+            use_roas = st.sidebar.checkbox("Aplicar ROAS Mínimo", value=False)
+            min_roas = None
+            if use_roas and "ROAS" in df.columns:
+                roas_max = float(df["ROAS"].replace([np.inf, -np.inf], np.nan).dropna().max())
+                if np.isnan(roas_max) or roas_max <= 0:
+                    roas_max = 10.0
+                roas_step = max(0.001, roas_max / 100)
+                min_roas = st.sidebar.number_input(
+                    "ROAS Mínimo",
+                    min_value=0.0,
+                    max_value=roas_max,
+                    value=roas_max * 0.5,
+                    step=roas_step,
+                    format="%.3f",
+                )
+
+            # --- iROAS ---
+            use_iroas = st.sidebar.checkbox("Aplicar iROAS Mínimo", value=False)
+            min_iroas = None
+            if use_iroas and "iROAS" in df.columns:
+                iroas_max = float(df["iROAS"].replace([np.inf, -np.inf], np.nan).dropna().max())
+                if np.isnan(iroas_max) or iroas_max <= 0:
+                    iroas_max = 10.0
+                iroas_step = max(0.001, iroas_max / 100)
+                min_iroas = st.sidebar.number_input(
+                    "iROAS Mínimo",
+                    min_value=0.0,
+                    max_value=iroas_max,
+                    value=iroas_max * 0.5,
+                    step=iroas_step,
+                    format="%.3f",
+                )
+
+            # --- KPI Mínimo ---
+            use_min_kpi = st.sidebar.checkbox("Aplicar KPI Mínimo", value=False)
+            min_kpi_val = None
+            if use_min_kpi:
+                kpi_max = float(df["Monthly_KPI"].max())
+                min_kpi_val = st.sidebar.number_input(
+                    f"{kpi_name} Mínimo (mensal)",
+                    min_value=0.0,
+                    max_value=kpi_max,
+                    value=kpi_max * 0.5,
+                    step=max(1.0, kpi_max / 100),
+                    format="%.0f",
+                )
+
+            # --- % Incrementalidade ---
+            use_min_incrementality = st.sidebar.checkbox(
+                "Aplicar % de Incrementalidade Mínima", value=False
+            )
+            min_incrementality_pct = None
+            if use_min_incrementality:
+                min_incrementality_pct = st.sidebar.slider(
+                    "% Incrementalidade Mínima",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=20.0,
+                    step=1.0,
+                    format="%.0f%%",
+                )
+
+            filtered_df = df[
+                (df["Monthly_Investment"] >= min_budget)
+                & (df["Monthly_Investment"] <= max_budget)
+            ]
 
             if use_cpa_target and "CPA" in filtered_df.columns:
                 filtered_df = filtered_df[filtered_df["CPA"] <= target_cpa]
 
             if use_icpa_target and "iCPA" in filtered_df.columns:
                 filtered_df = filtered_df[filtered_df["iCPA"] <= target_icpa]
+
+            if use_roas and min_roas is not None and "ROAS" in filtered_df.columns:
+                filtered_df = filtered_df[filtered_df["ROAS"] >= min_roas]
+
+            if use_iroas and min_iroas is not None and "iROAS" in filtered_df.columns:
+                filtered_df = filtered_df[filtered_df["iROAS"] >= min_iroas]
+
+            if use_min_kpi and min_kpi_val is not None:
+                filtered_df = filtered_df[filtered_df["Monthly_KPI"] >= min_kpi_val]
+
+            if use_min_incrementality and min_incrementality_pct is not None:
+                filtered_df = filtered_df[filtered_df["Pct_Incrementality"] >= min_incrementality_pct]
 
             if filtered_df.empty:
                 st.warning(
@@ -1476,19 +1577,78 @@ with tab3:
                         / optimal_point["Projected_Total_KPIs"]
                     )
                 )
-                col3.metric("Global CPA", value=f"R$ {cpa_val:,.2f}")
+                baseline_cpa = (
+                    true_baseline_monthly_inv / true_baseline_monthly_kpi
+                    if true_baseline_monthly_kpi > 0
+                    else None
+                )
+                cpa_delta = f"R$ {cpa_val - baseline_cpa:+,.2f} vs Baseline" if baseline_cpa else None
+                col3.metric("Global CPA", value=f"R$ {cpa_val:,.2f}", delta=cpa_delta, delta_color="inverse")
 
                 icpa_val = optimal_point["iCPA"] if "iCPA" in optimal_point else 0.0
                 if pd.isna(icpa_val):
                     icpa_val = 0.0
+                target_icpa_cfg = active_config.get("financial_targets", {}).get("target_icpa")
+                # ponytail: 999999 is the sentinel for "no limit set" (see line ~857)
+                if target_icpa_cfg and target_icpa_cfg < 999999 and icpa_val > 0:
+                    icpa_delta = f"limite R$ {target_icpa_cfg:,.2f}"
+                    icpa_delta_color = "normal" if icpa_val <= target_icpa_cfg else "inverse"
+                elif icpa_val > 0:
+                    icpa_delta = "sem limite configurado"
+                    icpa_delta_color = "off"
+                else:
+                    icpa_delta, icpa_delta_color = None, "off"
                 col4.metric(
                     "Marginal iCPA",
                     value=f"R$ {icpa_val:,.2f}" if icpa_val > 0 else "N/A",
-                    delta_color="inverse",
+                    delta=icpa_delta,
+                    delta_color=icpa_delta_color,
                 )
+
+                _, c2, c3, c4, _ = st.columns([0.5, 1, 1, 1, 0.5])
+
+                kpi_gain_pct = (
+                    (kpi_val - true_baseline_monthly_kpi) / true_baseline_monthly_kpi * 100
+                    if true_baseline_monthly_kpi > 0
+                    else 0.0
+                )
+                c2.metric(
+                    f"Ganho de {kpi_name} (%)",
+                    value=f"{kpi_gain_pct:+.1f}%",
+                    delta=f"{kpi_val - true_baseline_monthly_kpi:,.0f} unidades",
+                )
+
+                inc_inv_val = optimal_point["Incremental_Investment"] * DAYS_IN_MONTH
+                inc_inv_str = (
+                    f"R$ {inc_inv_val / 1e6:,.2f}M" if inc_inv_val >= 1e6 else f"R$ {inc_inv_val:,.0f}"
+                )
+                c3.metric(
+                    "Investimento Incremental",
+                    value=inc_inv_str,
+                    delta="vs. Cenário Atual",
+                    delta_color="off",
+                )
+
+                inc_rev = optimal_point.get("Incremental_Revenue", 0.0) if hasattr(optimal_point, "get") else optimal_point["Incremental_Revenue"] if "Incremental_Revenue" in optimal_point.index else 0.0
+                inc_inv_daily = optimal_point["Incremental_Investment"] if "Incremental_Investment" in optimal_point.index else 0.0
+                if not pd.isna(inc_rev) and inc_rev > 0 and inc_inv_daily > 0:
+                    # ponytail: both Incremental_Revenue and Incremental_Investment are daily — ratio is valid as-is
+                    iroi = inc_rev / inc_inv_daily
+                    c4.metric("ROI Incremental", value=f"{iroi:.2f}x", delta="receita / investimento", delta_color="off")
+                elif inc_kpi_val > 0 and inc_inv_val > 0:
+                    efficiency = inc_kpi_val / (inc_inv_val / 1000)
+                    c4.metric(f"{kpi_name} / R$1k", value=f"{efficiency:.1f}", delta="eficiência incremental", delta_color="off")
+                else:
+                    c4.metric("Eficiência Incremental", value="N/A")
 
                 st.markdown("---")
                 st.markdown("### Curva de Saturação de Investimentos")
+                st.markdown(
+                    "A curva abaixo mostra a relação entre investimento mensal e KPI projetado. "
+                    "O **ponto ótimo** (⭐) indica onde o retorno marginal começa a diminuir significativamente — "
+                    "investir além desse ponto gera ganhos decrescentes. "
+                    "A **linha verde** marca a base histórica de investimento para referência."
+                )
 
                 plot_limit = max_budget * 1.30
                 df_plot = df[df["Monthly_Investment"] <= plot_limit]
@@ -1694,28 +1854,33 @@ with tab3:
 
                 with row_donut1:
                     if not hist_df.empty:
-                        hist_df["Formatted_Budget"] = hist_df["Budget"].apply(
-                            lambda x: (
-                                f"R$ {x / 1e6:.1f}M"
-                                if x >= 1e6
-                                else (
-                                    f"R$ {x / 1e3:.1f}k" if x >= 1e3 else f"R$ {x:,.0f}"
-                                )
-                            )
+                        total_hist = hist_df["Budget"].sum()
+                        hist_df["Pct"] = hist_df["Budget"] / total_hist * 100
+                        hist_df["Label"] = hist_df.apply(
+                            lambda r: (
+                                f"R$ {r['Budget']/1e6:.1f}M" if r['Budget'] >= 1e6
+                                else (f"R$ {r['Budget']/1e3:.1f}k" if r['Budget'] >= 1e3 else f"R$ {r['Budget']:,.0f}")
+                            ) + f" ({r['Pct']:.1f}%)",
+                            axis=1,
                         )
-                        fig_hist = px.pie(
+                        hist_df = hist_df.sort_values("Budget")
+                        fig_hist = px.bar(
                             hist_df,
-                            values="Budget",
-                            names="Channel",
+                            x="Budget",
+                            y="Channel",
+                            color="Channel",
+                            orientation="h",
                             title="Alocação Histórica",
-                            hole=0.4,
-                            custom_data=["Formatted_Budget"],
+                            text="Label",
                         )
-                        fig_hist.update_traces(
-                            textposition="inside",
-                            texttemplate="%{label}<br>%{percent}<br>%{customdata[0]}",
+                        fig_hist.update_traces(textposition="outside", cliponaxis=False)
+                        fig_hist.update_layout(
+                            xaxis_title=None,
+                            yaxis_title=None,
+                            xaxis_showticklabels=False,
+                            showlegend=False,
+                            margin=dict(r=160),
                         )
-                        fig_hist.update_layout(showlegend=False)
                         st.plotly_chart(fig_hist, use_container_width=True)
 
                 strat_cols = [
@@ -1735,28 +1900,33 @@ with tab3:
 
                 with row_donut2:
                     if not strat_df.empty:
-                        strat_df["Formatted_Budget"] = strat_df["Budget"].apply(
-                            lambda x: (
-                                f"R$ {x / 1e6:.1f}M"
-                                if x >= 1e6
-                                else (
-                                    f"R$ {x / 1e3:.1f}k" if x >= 1e3 else f"R$ {x:,.0f}"
-                                )
-                            )
+                        total_strat = strat_df["Budget"].sum()
+                        strat_df["Pct"] = strat_df["Budget"] / total_strat * 100
+                        strat_df["Label"] = strat_df.apply(
+                            lambda r: (
+                                f"R$ {r['Budget']/1e6:.1f}M" if r['Budget'] >= 1e6
+                                else (f"R$ {r['Budget']/1e3:.1f}k" if r['Budget'] >= 1e3 else f"R$ {r['Budget']:,.0f}")
+                            ) + f" ({r['Pct']:.1f}%)",
+                            axis=1,
                         )
-                        fig_strat = px.pie(
+                        strat_df = strat_df.sort_values("Budget")
+                        fig_strat = px.bar(
                             strat_df,
-                            values="Budget",
-                            names="Channel",
+                            x="Budget",
+                            y="Channel",
+                            color="Channel",
+                            orientation="h",
                             title="Alocação Recomendada",
-                            hole=0.4,
-                            custom_data=["Formatted_Budget"],
+                            text="Label",
                         )
-                        fig_strat.update_traces(
-                            textposition="inside",
-                            texttemplate="%{label}<br>%{percent}<br>%{customdata[0]}",
+                        fig_strat.update_traces(textposition="outside", cliponaxis=False)
+                        fig_strat.update_layout(
+                            xaxis_title=None,
+                            yaxis_title=None,
+                            xaxis_showticklabels=False,
+                            showlegend=False,
+                            margin=dict(r=160),
                         )
-                        fig_strat.update_layout(showlegend=False)
                         st.plotly_chart(fig_strat, use_container_width=True)
 
                 st.markdown("---")
