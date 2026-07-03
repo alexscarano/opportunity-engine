@@ -417,16 +417,15 @@ def generate_aggregated_response_curve(elasticity_results, config, optimized_mix
     optimization_target = config.get('optimization_target', 'REVENUE').upper()
     financial_targets = config.get('financial_targets', {})
     
-    if optimization_target == 'REVENUE':
-        conversion_rate = config.get('conversion_rate_from_kpi_to_bo', 0)
-        avg_ticket = config.get('average_ticket', 0)
-        baseline_revenue = baseline_kpi * conversion_rate * avg_ticket
-        res_df['Projected_Revenue'] = res_df['Projected_Total_KPIs'] * conversion_rate * avg_ticket
-        res_df['Incremental_Revenue'] = res_df['Projected_Revenue'] - baseline_revenue
-        res_df['Incremental_ROI'] = (res_df['Incremental_Revenue'] / res_df['Incremental_Investment']).fillna(0)
-    else:
-        res_df['iCPA'] = (res_df['Incremental_Investment'] / res_df['Incremental_KPI']).fillna(0)
-        res_df['iCPA'] = res_df['iCPA'].replace([np.inf, -np.inf], np.nan)
+    conversion_rate = config.get('conversion_rate_from_kpi_to_bo', 0)
+    avg_ticket = config.get('average_ticket', 0)
+    baseline_revenue = baseline_kpi * conversion_rate * avg_ticket
+    res_df['Projected_Revenue'] = res_df['Projected_Total_KPIs'] * conversion_rate * avg_ticket
+    res_df['Incremental_Revenue'] = res_df['Projected_Revenue'] - baseline_revenue
+    res_df['Incremental_ROI'] = (res_df['Incremental_Revenue'] / res_df['Incremental_Investment']).fillna(0)
+
+    res_df['iCPA'] = (res_df['Incremental_Investment'] / res_df['Incremental_KPI']).fillna(0)
+    res_df['iCPA'] = res_df['iCPA'].replace([np.inf, -np.inf], np.nan)
 
     # Max Efficiency Point
     curve_segment = res_df[res_df['Daily_Investment'] >= total_avg_daily_spend].copy()
