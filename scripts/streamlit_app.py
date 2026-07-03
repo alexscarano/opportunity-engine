@@ -260,6 +260,7 @@ with tab1:
             if gemini_key:
                 env["GEMINI_API_KEY"] = gemini_key
             env["PYTHONPATH"] = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+            env["PYTHONIOENCODING"] = "utf-8"
             
             import sys
             python_bin = sys.executable
@@ -274,7 +275,7 @@ with tab1:
                 [python_bin, target_main_script, "--config", target_config_path],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                text=True,
+                encoding="utf-8",
                 env=env,
                 cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
             )
