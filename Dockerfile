@@ -4,7 +4,10 @@
 FROM python:3.13-slim AS builder
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+# --no-compile: skip .pyc generation (~70MB), python compiles on first import instead
+# strip vendored test suites from deps (~55MB dead weight, e.g. scipy/pandas/statsmodels tests)
+RUN pip install --no-cache-dir --no-compile --prefix=/install -r requirements.txt \
+    && find /install -depth -type d \( -name "tests" -o -name "test" \) -exec rm -rf {} +
 
 # ---- runtime: only the installed packages + app code, non-root ----
 FROM python:3.13-slim
