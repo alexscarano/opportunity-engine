@@ -269,36 +269,46 @@ PREMIUM_CSS = """
         background-color: var(--st-border-color, rgba(128, 128, 128, 0.3)) !important;
     }
 
-    /* Default: Light Mode logos (no filter, dark text on light background) */
-    .dash-logo, .almap-logo {
-        filter: none !important;
-    }
-
-    /* Fallback: prefers-color-scheme (respects OS setting when theme is unconfigured) */
+    /* Logo theme swap: initial guess before the JS below runs (also the fallback if JS is
+       blocked). Overridden instantly client-side on theme toggle — see script below. */
+    .logo-light { display: block; }
+    .logo-dark { display: none; }
     @media (prefers-color-scheme: dark) {
-        .logo-container:not(.force-light) .dash-logo {
-            filter: invert(1) !important;
-        }
-        .logo-container:not(.force-light) .almap-logo {
-            filter: invert(1) hue-rotate(180deg) !important;
-        }
-    }
-
-    /* Explicit overrides configured in Streamlit settings */
-    .logo-container.force-dark .dash-logo {
-        filter: invert(1) !important;
-    }
-    .logo-container.force-dark .almap-logo {
-        filter: invert(1) hue-rotate(180deg) !important;
-    }
-
-    .logo-container.force-light .dash-logo {
-        filter: none !important;
-    }
-    .logo-container.force-light .almap-logo {
-        filter: none !important;
+        .logo-light { display: none; }
+        .logo-dark { display: block; }
     }
 </style>
+<script>
+(function() {
+    function isAppDark() {
+        var el = document.querySelector('[data-testid="stApp"]') || document.body;
+        var bg = window.getComputedStyle(el).backgroundColor;
+        var m = bg.match(/[\\d.]+/g);
+        if (!m || m.length < 3) return null;
+        var luminance = 0.299 * m[0] + 0.587 * m[1] + 0.114 * m[2];
+        return luminance < 128;
+    }
+    function applyLogoTheme() {
+        var isDark = isAppDark();
+        if (isDark === null) return;
+        document.querySelectorAll('.logo-light').forEach(function(img) {
+            img.style.display = isDark ? 'none' : 'block';
+        });
+        document.querySelectorAll('.logo-dark').forEach(function(img) {
+            img.style.display = isDark ? 'block' : 'none';
+        });
+    }
+    applyLogoTheme();
+    // Streamlit re-injects its theme stylesheet on toggle, mutating the document head; watch
+    // only that, not the whole body (which mutates constantly from normal app reruns/widgets).
+    new MutationObserver(applyLogoTheme).observe(document.head, {
+        childList: true, subtree: true, characterData: true
+    });
+    if (window.matchMedia) {
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyLogoTheme);
+    }
+})();
+</script>
 """
 
 
@@ -360,18 +370,18 @@ logo_dash_dark = load_logo_base64("DASH_NEGATIVO.png")
 logo_almap_light = load_logo_base64("AF_ALMAPBBDO_LOGO_FINAL FILIPE-01.png")
 logo_almap_dark = load_logo_base64("AF_ALMAPBBDO_LOGO_FINAL FILIPE-02.png")
 
-# Detecta tema configurado no Streamlit para forçar cores se necessário
-theme_class = ""
-try:
-    theme = getattr(st.context, "theme", None)
-    if theme:
-        base = getattr(theme, "base", None)
-        if base == "light":
-            theme_class = "force-light"
-        elif base == "dark":
-            theme_class = "force-dark"
-except Exception:
-    pass
+# st.context.theme.type é a única info de tema exposta pelo Streamlit (light/dark), mas pode
+# vir None no primeiro load da sessão ou no rerun logo após o usuário trocar o tema
+# (https://github.com/streamlit/streamlit/issues/11920). Quando None, o CSS acima decide via
+# prefers-color-scheme; quando conhecido, o inline style abaixo força a variante correta.
+_theme_type = getattr(st.context.theme, "type", None)
+if _theme_type == "dark":
+    _logo_light_style, _logo_dark_style = "display: none;", "display: block;"
+elif _theme_type == "light":
+    _logo_light_style, _logo_dark_style = "display: block;", "display: none;"
+else:
+    _logo_light_style, _logo_dark_style = "", ""
+
 
 init_db()
 # Restore session WITHOUT cookie component (synchronous, no rerun needed)
@@ -418,17 +428,19 @@ if "user_id" not in st.session_state:
         st.rerun()
 
 if "user_id" not in st.session_state:
-    st.html(PREMIUM_CSS)
+    st.html(PREMIUM_CSS, unsafe_allow_javascript=True)
     st.markdown(
         f"""
         <div style="text-align: center; margin-top: 50px; margin-bottom: 20px;">
-            <div class="logo-container side-by-side {theme_class}">
+            <div class="logo-container side-by-side">
                 <div class="logo-item">
-                    <img src="data:image/png;base64,{logo_dash_light}" class="dash-logo" style="max-height: 55px; width: auto; display: block;" />
+                    <img src="data:image/png;base64,{logo_dash_light}" class="logo-light" style="max-height: 55px; width: auto; {_logo_light_style}" />
+                    <img src="data:image/png;base64,{logo_dash_dark}" class="logo-dark" style="max-height: 55px; width: auto; {_logo_dark_style}" />
                 </div>
                 <div class="logo-divider"></div>
                 <div class="logo-item">
-                    <img src="data:image/png;base64,{logo_almap_light}" class="almap-logo" style="max-height: 55px; width: auto; display: block;" />
+                    <img src="data:image/png;base64,{logo_almap_light}" class="logo-light" style="max-height: 55px; width: auto; {_logo_light_style}" />
+                    <img src="data:image/png;base64,{logo_almap_dark}" class="logo-dark" style="max-height: 55px; width: auto; {_logo_dark_style}" />
                 </div>
             </div>
             <p style="color: #5f6368; font-size: 1.1rem; margin-top: 15px;">Por favor, faça o login para acessar a plataforma de Otimização de Oportunidades.</p>
@@ -477,7 +489,7 @@ if "user_id" not in st.session_state:
     st.stop()
 
 # Authenticated — inject CSS now
-st.html(PREMIUM_CSS)
+st.html(PREMIUM_CSS, unsafe_allow_javascript=True)
 
 
 st.title("Opportunity Engine")
@@ -515,13 +527,15 @@ if st.session_state.get("active_config_path"):
 # Sidebar logos
 st.sidebar.markdown(
     f"""
-    <div class="logo-container side-by-side {theme_class}">
+    <div class="logo-container side-by-side">
         <div class="logo-item">
-            <img src="data:image/png;base64,{logo_dash_light}" class="dash-logo" style="max-height: 40px; width: auto; display: block;" />
+            <img src="data:image/png;base64,{logo_dash_light}" class="logo-light" style="max-height: 40px; width: auto; {_logo_light_style}" />
+            <img src="data:image/png;base64,{logo_dash_dark}" class="logo-dark" style="max-height: 40px; width: auto; {_logo_dark_style}" />
         </div>
         <div class="logo-divider"></div>
         <div class="logo-item">
-            <img src="data:image/png;base64,{logo_almap_light}" class="almap-logo" style="max-height: 40px; width: auto; display: block;" />
+            <img src="data:image/png;base64,{logo_almap_light}" class="logo-light" style="max-height: 40px; width: auto; {_logo_light_style}" />
+            <img src="data:image/png;base64,{logo_almap_dark}" class="logo-dark" style="max-height: 40px; width: auto; {_logo_dark_style}" />
         </div>
     </div>
     """,
