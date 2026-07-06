@@ -10,7 +10,7 @@ sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "scripts"))
 )
 
-from elasticity_analysis import cap_channel_mix_share, optimize_with_restarts
+from elasticity_analysis import cap_channel_mix_share, optimize_with_restarts, predict_clipped_kpi
 
 
 class TestCapChannelMixShare(unittest.TestCase):
@@ -79,6 +79,36 @@ class TestOptimizeWithRestarts(unittest.TestCase):
             two_basin_objective, [1.0], bounds, args=(None,), n_restarts=5, seed=42
         )
         self.assertEqual(result_a.fun, result_b.fun)
+
+
+class FakeScaler:
+    """Replicates MinMaxScaler's un-clipped affine transform for a column whose
+    historical range was [100, 200], without depending on sklearn internals."""
+
+    def transform(self, X):
+        return np.array([[(row[0] - 100.0) / (200.0 - 100.0)] for row in X])
+
+
+class FakeModel:
+    """Replicates a fitted single-feature linear model with coefficient 10."""
+
+    def predict(self, X):
+        return np.array([10.0 * row[0] for row in X])
+
+
+class TestPredictClippedKpi(unittest.TestCase):
+
+    def test_clips_extrapolated_feature_instead_of_going_negative(self):
+        # Simulated spend of 0 is below the historical minimum (100), which would
+        # scale to -1.0 without clipping -> KPI 10 below baseline. Clipped to 0,
+        # it should contribute nothing, landing exactly on the baseline.
+        predicted = predict_clipped_kpi(500.0, FakeModel(), FakeScaler(), [0.0])
+        self.assertEqual(predicted, 500.0)
+
+    def test_leaves_in_range_values_unaffected(self):
+        # Spend of 150 scales to 0.5, well within [0, 1] -- clip is a no-op.
+        predicted = predict_clipped_kpi(500.0, FakeModel(), FakeScaler(), [150.0])
+        self.assertEqual(predicted, 505.0)
 
 
 if __name__ == "__main__":

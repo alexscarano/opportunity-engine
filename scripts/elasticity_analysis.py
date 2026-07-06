@@ -120,6 +120,23 @@ def hill_transform(spend, k, s):
         return 1 / (1 + safe_ratio**-k)
 
 
+def predict_clipped_kpi(organic_baseline_mean, mkt_model, mkt_scaler, mkt_features):
+    """
+    Predicts KPI from Hill-transformed marketing features, clipping the scaled
+    features to [0, 1] before feeding the linear model.
+
+    Simulated spend outside the historically observed range (e.g. investment=0,
+    or several multiples of the historical average) extrapolates `mkt_scaler`
+    beyond the range it was fit on -- MinMaxScaler does not clip, so this can
+    produce a negative scaled feature which, combined with the model's
+    non-negative coefficients, predicts a KPI below the organic baseline
+    (even negative). Clipping keeps the simulation within the physically
+    sensible 0%-100%-of-historical-saturation range.
+    """
+    scaled_features = np.clip(mkt_scaler.transform([mkt_features]), 0.0, 1.0)
+    return organic_baseline_mean + mkt_model.predict(scaled_features)[0]
+
+
 def elasticity_objective_function(params, df, kpi_lift, spend_cols):
     """
     Objective function for the Two-Stage Elasticity Analysis optimization.
