@@ -276,6 +276,7 @@ from dashboard_charts import (
     build_sessions_bar_chart,
     build_response_curve_individual,
     find_saturation_point,
+    compute_incremental_cpa,
 )
 
 init_db()
@@ -1462,11 +1463,9 @@ with tab3:
                 scenario_df[f"{kpi_name} Incrementais"] = (
                     scenario_df[f"Projeção de {kpi_name}"] - base_kpi
                 )
-                scenario_df["iCPA"] = np.where(
-                    scenario_df[f"{kpi_name} Incrementais"] > 0,
-                    scenario_df["Investimento Incremental"]
-                    / scenario_df[f"{kpi_name} Incrementais"],
-                    0,
+                scenario_df["iCPA"] = compute_incremental_cpa(
+                    scenario_df["Investimento Incremental"],
+                    scenario_df[f"{kpi_name} Incrementais"],
                 )
 
                 scenario_df.loc[
