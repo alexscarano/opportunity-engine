@@ -240,7 +240,7 @@ PREMIUM_CSS = """
         color: var(--text-color);
     }
     
-    /* Logo styling and responsive switching */
+    /* Logo styling */
     .logo-container {
         text-align: center;
         width: 100%;
@@ -266,53 +266,7 @@ PREMIUM_CSS = """
     .logo-divider {
         width: 1px;
         height: 35px;
-        background-color: #ccc;
-    }
-    
-    /* Default visibility (Light mode style) */
-    .logo-light {
-        display: block !important;
-    }
-    .logo-dark {
-        display: none !important;
-    }
-    
-    /* Streamlit Light theme overrides */
-    [data-theme="light"] .logo-light,
-    html[data-theme="light"] .logo-light,
-    body[data-theme="light"] .logo-light,
-    div[data-testid="stAppViewContainer"] [data-theme="light"] .logo-light {
-        display: block !important;
-    }
-    [data-theme="light"] .logo-dark,
-    html[data-theme="light"] .logo-dark,
-    body[data-theme="light"] .logo-dark,
-    div[data-testid="stAppViewContainer"] [data-theme="light"] .logo-dark {
-        display: none !important;
-    }
-    [data-theme="light"] .logo-divider,
-    html[data-theme="light"] .logo-divider,
-    body[data-theme="light"] .logo-divider {
-        background-color: #ccc !important;
-    }
-    
-    /* Streamlit Dark theme overrides */
-    [data-theme="dark"] .logo-light,
-    html[data-theme="dark"] .logo-light,
-    body[data-theme="dark"] .logo-light,
-    div[data-testid="stAppViewContainer"] [data-theme="dark"] .logo-light {
-        display: none !important;
-    }
-    [data-theme="dark"] .logo-dark,
-    html[data-theme="dark"] .logo-dark,
-    body[data-theme="dark"] .logo-dark,
-    div[data-testid="stAppViewContainer"] [data-theme="dark"] .logo-dark {
-        display: block !important;
-    }
-    [data-theme="dark"] .logo-divider,
-    html[data-theme="dark"] .logo-divider,
-    body[data-theme="dark"] .logo-divider {
-        background-color: rgba(255, 255, 255, 0.2) !important;
+        background-color: var(--st-border-color, rgba(128, 128, 128, 0.3)) !important;
     }
 </style>
 """
@@ -376,6 +330,39 @@ logo_dash_dark = load_logo_base64("DASH_NEGATIVO.png")
 logo_almap_light = load_logo_base64("AF_ALMAPBBDO_LOGO_FINAL FILIPE-01.png")
 logo_almap_dark = load_logo_base64("AF_ALMAPBBDO_LOGO_FINAL FILIPE-02.png")
 
+# Detecta tema atual do Streamlit
+def check_is_dark():
+    try:
+        theme = getattr(st.context, "theme", None)
+        if theme:
+            base = getattr(theme, "base", None)
+            if base == "dark":
+                return True
+            if base == "light":
+                return False
+            
+            # Se base for None (ex: usar configuração do sistema), verifica a cor de fundo
+            bg = getattr(theme, "background_color", None)
+            if bg:
+                bg = bg.lstrip("#")
+                if len(bg) == 3:
+                    bg = "".join([c*2 for c in bg])
+                if len(bg) == 6:
+                    r = int(bg[0:2], 16)
+                    g = int(bg[2:4], 16)
+                    b = int(bg[4:6], 16)
+                    # Luminância relativa
+                    return (0.299 * r + 0.587 * g + 0.114 * b) < 128
+    except Exception:
+        pass
+    # default: True (tema escuro é o padrão do sistema do usuário)
+    return True
+
+is_dark = check_is_dark()
+logo_dash = logo_dash_dark if is_dark else logo_dash_light
+logo_almap = logo_almap_dark if is_dark else logo_almap_light
+
+
 init_db()
 # Restore session WITHOUT cookie component (synchronous, no rerun needed)
 if "user_id" not in st.session_state:
@@ -427,13 +414,11 @@ if "user_id" not in st.session_state:
         <div style="text-align: center; margin-top: 50px; margin-bottom: 20px;">
             <div class="logo-container side-by-side">
                 <div class="logo-item">
-                    <img src="data:image/png;base64,{logo_dash_light}" class="logo-light" style="max-height: 55px; width: auto; display: block;" />
-                    <img src="data:image/png;base64,{logo_dash_dark}" class="logo-dark" style="max-height: 55px; width: auto; display: block;" />
+                    <img src="data:image/png;base64,{logo_dash}" style="max-height: 55px; width: auto; display: block;" />
                 </div>
                 <div class="logo-divider"></div>
                 <div class="logo-item">
-                    <img src="data:image/png;base64,{logo_almap_light}" class="logo-light" style="max-height: 55px; width: auto; display: block;" />
-                    <img src="data:image/png;base64,{logo_almap_dark}" class="logo-dark" style="max-height: 55px; width: auto; display: block;" />
+                    <img src="data:image/png;base64,{logo_almap}" style="max-height: 55px; width: auto; display: block;" />
                 </div>
             </div>
             <p style="color: #5f6368; font-size: 1.1rem; margin-top: 15px;">Por favor, faça o login para acessar a plataforma de Otimização de Oportunidades.</p>
@@ -522,13 +507,11 @@ st.sidebar.markdown(
     f"""
     <div class="logo-container side-by-side">
         <div class="logo-item">
-            <img src="data:image/png;base64,{logo_dash_light}" class="logo-light" style="max-height: 40px; width: auto; display: block;" />
-            <img src="data:image/png;base64,{logo_dash_dark}" class="logo-dark" style="max-height: 40px; width: auto; display: block;" />
+            <img src="data:image/png;base64,{logo_dash}" style="max-height: 40px; width: auto; display: block;" />
         </div>
         <div class="logo-divider"></div>
         <div class="logo-item">
-            <img src="data:image/png;base64,{logo_almap_light}" class="logo-light" style="max-height: 40px; width: auto; display: block;" />
-            <img src="data:image/png;base64,{logo_almap_dark}" class="logo-dark" style="max-height: 40px; width: auto; display: block;" />
+            <img src="data:image/png;base64,{logo_almap}" style="max-height: 40px; width: auto; display: block;" />
         </div>
     </div>
     """,
