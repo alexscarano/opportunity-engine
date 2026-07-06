@@ -275,6 +275,7 @@ from dashboard_charts import (
     build_investment_bar_chart,
     build_sessions_bar_chart,
     build_response_curve_individual,
+    find_saturation_point,
 )
 
 init_db()
@@ -1420,21 +1421,7 @@ with tab3:
             else:
                 optimal_point = filtered_df.iloc[-1]
 
-                incremental_kpis = df["Projected_Total_KPIs"].diff().fillna(0).values
-                investment_steps = df["Daily_Investment"].diff().fillna(1).values
-                first_derivative = incremental_kpis / investment_steps
-                saturation_point = optimal_point
-                if len(first_derivative) > 1:
-                    initial_marginal_gain = first_derivative[1]
-                    if initial_marginal_gain > 0:
-                        saturation_threshold = initial_marginal_gain * 0.1
-                        sat_indices = np.where(
-                            first_derivative[1:] < saturation_threshold
-                        )[0]
-                        if len(sat_indices) > 0:
-                            saturation_idx = sat_indices[0] + 1
-                            if saturation_idx < len(df):
-                                saturation_point = df.iloc[saturation_idx]
+                saturation_point = find_saturation_point(df, optimal_point)
 
                 st.markdown(f"### Resumo dos Cenários Projetados - {kpi_name}")
                 st.markdown(
