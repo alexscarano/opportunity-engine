@@ -152,6 +152,37 @@ def elasticity_objective_function(params, df, kpi_lift, spend_cols):
     return np.mean((kpi_lift - y_pred) ** 2)
 
 
+def optimize_with_restarts(objective, initial_params, bounds, args, n_restarts=5, seed=42):
+    """
+    Runs scipy.optimize.minimize from `initial_params` plus `n_restarts` additional
+    starting points sampled uniformly within `bounds`, and returns whichever run
+    converged to the lowest objective value.
+
+    Guards against the optimizer settling into a bad local minimum from a single
+    starting point -- which is what happens with the Stage-2 elasticity fit on
+    collinear channel spend (see docs/superpowers/specs/2026-07-06-dashboard-inconsistencies-fix-design.md).
+    """
+    rng = np.random.default_rng(seed)
+    candidate_starts = [initial_params] + [
+        [rng.uniform(low, high) for low, high in bounds] for _ in range(n_restarts)
+    ]
+
+    best_result = None
+    for candidate in candidate_starts:
+        candidate_result = minimize(
+            objective,
+            candidate,
+            args=args,
+            bounds=bounds,
+            method="L-BFGS-B",
+            options={"maxiter": 500, "disp": False},
+        )
+        if best_result is None or candidate_result.fun < best_result.fun:
+            best_result = candidate_result
+
+    return best_result
+
+
 def run_mmm_engine(config):
     """
     Runs the Two-Stage Elasticity Analysis (MMM) engine.
