@@ -505,10 +505,7 @@ def generate_aggregated_response_curve(
                     simulated_adstocked, opt_params["ks"][i], opt_params["ss"][i]
                 )
             )
-        return (
-            organic_baseline_mean
-            + mkt_model.predict(mkt_scaler.transform([mkt_features]))[0]
-        )
+        return predict_clipped_kpi(organic_baseline_mean, mkt_model, mkt_scaler, mkt_features)
 
     # Baseline using Historical Mix
     baseline_kpi = simulate_kpi(total_avg_daily_spend, historical_mix)
@@ -792,9 +789,8 @@ def generate_individual_response_curves(
                     )
                 )
 
-            predicted_kpi = (
-                organic_baseline_mean
-                + mkt_model.predict(mkt_scaler.transform([mkt_features]))[0]
+            predicted_kpi = predict_clipped_kpi(
+                organic_baseline_mean, mkt_model, mkt_scaler, mkt_features
             )
             individual_curves.append(
                 {
