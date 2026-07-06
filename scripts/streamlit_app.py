@@ -439,7 +439,7 @@ if "user_id" not in st.session_state:
         st.rerun()
 
 if "user_id" not in st.session_state:
-    st.markdown(PREMIUM_CSS, unsafe_allow_html=True)
+    st.html(PREMIUM_CSS)
     st.markdown(
         f"""
         <div style="text-align: center; margin-top: 50px; margin-bottom: 20px;">
@@ -500,7 +500,7 @@ if "user_id" not in st.session_state:
     st.stop()
 
 # Authenticated — inject CSS now
-st.markdown(PREMIUM_CSS, unsafe_allow_html=True)
+st.html(PREMIUM_CSS)
 
 
 st.title("Opportunity Engine")
