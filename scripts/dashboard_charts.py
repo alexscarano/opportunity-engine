@@ -12,6 +12,44 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 
+def find_saturation_point(df, optimal_point):
+    """
+    Finds the point on the aggregate response curve (sorted by ascending
+    investment) where marginal KPI gain has sustainedly collapsed to under 10%
+    of the curve's peak marginal gain.
+
+    Uses the curve's own peak as the 100% reference (not the first step, which
+    can be an extrapolation artifact -- see predict_clipped_kpi in
+    elasticity_analysis.py) and returns the point right after the *last* index
+    still above threshold, so a transient dip that recovers afterward doesn't
+    get mistaken for the real, sustained saturation ceiling.
+
+    Falls back to `optimal_point` when the curve never rises (or is too short
+    to compute a derivative from).
+    """
+    incremental_kpis = df["Projected_Total_KPIs"].diff().fillna(0).values
+    investment_steps = df["Daily_Investment"].diff().fillna(1).values
+    first_derivative = incremental_kpis / investment_steps
+
+    if len(first_derivative) <= 1:
+        return optimal_point
+
+    peak_marginal_gain = first_derivative.max()
+    if peak_marginal_gain <= 0:
+        return optimal_point
+
+    saturation_threshold = peak_marginal_gain * 0.1
+    above_threshold = np.where(first_derivative > saturation_threshold)[0]
+    if len(above_threshold) == 0:
+        return optimal_point
+
+    saturation_idx = above_threshold[-1] + 1
+    if saturation_idx >= len(df):
+        return optimal_point
+
+    return df.iloc[saturation_idx]
+
+
 def build_icpa_curve(
     df_plot,
     optimal_point,

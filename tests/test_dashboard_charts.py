@@ -19,6 +19,7 @@ from dashboard_charts import (
     build_investment_bar_chart,
     build_sessions_bar_chart,
     build_response_curve_individual,
+    find_saturation_point,
 )
 
 
@@ -291,6 +292,47 @@ class TestBuildResponseCurveIndividual(unittest.TestCase):
         df["Recommended"] = np.nan
         fig = build_response_curve_individual(df, "AWIN")
         self.assertEqual(len(fig.layout.shapes), 1)  # only historical avg
+
+
+class TestFindSaturationPoint(unittest.TestCase):
+
+    def test_skips_transient_dip_and_finds_start_of_sustained_flat_region(self):
+        # Marginal gain (per R$10 of investment) is 100, 90, then dips to 5 at
+        # investment=30 (a transient blip) before recovering to 80, 70, 60, and
+        # only truly flattens (3, 2, 1) from investment=70 onward.
+        df = pd.DataFrame({
+            "Daily_Investment": [0, 10, 20, 30, 40, 50, 60, 70, 80, 90],
+            "Projected_Total_KPIs": [0, 1000, 1900, 1950, 2750, 3450, 4050, 4080, 4100, 4110],
+        })
+        optimal_point = df.iloc[-1]
+
+        result = find_saturation_point(df, optimal_point)
+
+        # A naive "first dip below threshold" scan would wrongly stop at 30;
+        # the real, sustained flattening only starts at 70.
+        self.assertEqual(result["Daily_Investment"], 70)
+
+    def test_falls_back_to_optimal_point_when_curve_never_rises(self):
+        df = pd.DataFrame({
+            "Daily_Investment": [0, 10, 20],
+            "Projected_Total_KPIs": [100, 90, 80],
+        })
+        optimal_point = df.iloc[-1]
+
+        result = find_saturation_point(df, optimal_point)
+
+        self.assertEqual(result["Daily_Investment"], optimal_point["Daily_Investment"])
+
+    def test_falls_back_to_optimal_point_when_curve_is_too_short(self):
+        df = pd.DataFrame({
+            "Daily_Investment": [0],
+            "Projected_Total_KPIs": [100],
+        })
+        optimal_point = df.iloc[-1]
+
+        result = find_saturation_point(df, optimal_point)
+
+        self.assertEqual(result["Daily_Investment"], optimal_point["Daily_Investment"])
 
 
 if __name__ == "__main__":
