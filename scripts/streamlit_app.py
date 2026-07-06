@@ -248,6 +248,28 @@ PREMIUM_CSS = """
         justify-content: center;
         align-items: center;
     }
+    .logo-container.side-by-side {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 20px !important;
+        margin-bottom: 25px;
+        padding: 10px 0;
+    }
+    .logo-item {
+        flex: 0 1 auto;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    .logo-divider {
+        width: 1px;
+        height: 35px;
+        background-color: #ccc;
+    }
+    
+    /* Default visibility (Light mode style) */
     .logo-light {
         display: block !important;
     }
@@ -255,22 +277,42 @@ PREMIUM_CSS = """
         display: none !important;
     }
     
-    @media (prefers-color-scheme: dark) {
-        .logo-light {
-            display: none !important;
-        }
-        .logo-dark {
-            display: block !important;
-        }
+    /* Streamlit Light theme overrides */
+    [data-theme="light"] .logo-light,
+    html[data-theme="light"] .logo-light,
+    body[data-theme="light"] .logo-light,
+    div[data-testid="stAppViewContainer"] [data-theme="light"] .logo-light {
+        display: block !important;
+    }
+    [data-theme="light"] .logo-dark,
+    html[data-theme="light"] .logo-dark,
+    body[data-theme="light"] .logo-dark,
+    div[data-testid="stAppViewContainer"] [data-theme="light"] .logo-dark {
+        display: none !important;
+    }
+    [data-theme="light"] .logo-divider,
+    html[data-theme="light"] .logo-divider,
+    body[data-theme="light"] .logo-divider {
+        background-color: #ccc !important;
     }
     
+    /* Streamlit Dark theme overrides */
     [data-theme="dark"] .logo-light,
-    html[data-theme="dark"] .logo-light {
+    html[data-theme="dark"] .logo-light,
+    body[data-theme="dark"] .logo-light,
+    div[data-testid="stAppViewContainer"] [data-theme="dark"] .logo-light {
         display: none !important;
     }
     [data-theme="dark"] .logo-dark,
-    html[data-theme="dark"] .logo-dark {
+    html[data-theme="dark"] .logo-dark,
+    body[data-theme="dark"] .logo-dark,
+    div[data-testid="stAppViewContainer"] [data-theme="dark"] .logo-dark {
         display: block !important;
+    }
+    [data-theme="dark"] .logo-divider,
+    html[data-theme="dark"] .logo-divider,
+    body[data-theme="dark"] .logo-divider {
+        background-color: rgba(255, 255, 255, 0.2) !important;
     }
 </style>
 """
@@ -332,7 +374,7 @@ def load_logo_base64(filename):
 logo_dash_light = load_logo_base64("DASH_POSITIVO (1).png")
 logo_dash_dark = load_logo_base64("DASH_NEGATIVO.png")
 logo_almap_light = load_logo_base64("AF_ALMAPBBDO_LOGO_FINAL FILIPE-01.png")
-logo_almap_dark = load_logo_base64("AF_ALMAPBBDO_LOGO_FINAL FILIPE-04.png")
+logo_almap_dark = load_logo_base64("AF_ALMAPBBDO_LOGO_FINAL FILIPE-02.png")
 
 init_db()
 # Restore session WITHOUT cookie component (synchronous, no rerun needed)
@@ -383,9 +425,16 @@ if "user_id" not in st.session_state:
     st.markdown(
         f"""
         <div style="text-align: center; margin-top: 50px; margin-bottom: 20px;">
-            <div class="logo-container">
-                <img src="data:image/png;base64,{logo_dash_light}" class="logo-light" style="max-height: 80px; margin: auto; display: block;" />
-                <img src="data:image/png;base64,{logo_dash_dark}" class="logo-dark" style="max-height: 80px; margin: auto; display: block;" />
+            <div class="logo-container side-by-side">
+                <div class="logo-item">
+                    <img src="data:image/png;base64,{logo_dash_light}" class="logo-light" style="max-height: 55px; width: auto; display: block;" />
+                    <img src="data:image/png;base64,{logo_dash_dark}" class="logo-dark" style="max-height: 55px; width: auto; display: block;" />
+                </div>
+                <div class="logo-divider"></div>
+                <div class="logo-item">
+                    <img src="data:image/png;base64,{logo_almap_light}" class="logo-light" style="max-height: 55px; width: auto; display: block;" />
+                    <img src="data:image/png;base64,{logo_almap_dark}" class="logo-dark" style="max-height: 55px; width: auto; display: block;" />
+                </div>
             </div>
             <p style="color: #5f6368; font-size: 1.1rem; margin-top: 15px;">Por favor, faça o login para acessar a plataforma de Otimização de Oportunidades.</p>
         </div>
@@ -430,20 +479,6 @@ if "user_id" not in st.session_state:
                         st.rerun()
                     except ValueError as e:
                         st.error(str(e))
-        
-        # Footer logos
-        st.markdown(
-            f"""
-            <div style="text-align: center; margin-top: 40px; margin-bottom: 20px;">
-                <p style="color: #888; font-size: 0.8rem; margin-bottom: 8px;">Powered by</p>
-                <div class="logo-container">
-                    <img src="data:image/png;base64,{logo_almap_light}" class="logo-light" style="max-height: 30px; margin: auto; display: block;" />
-                    <img src="data:image/png;base64,{logo_almap_dark}" class="logo-dark" style="max-height: 30px; margin: auto; display: block;" />
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
     st.stop()
 
 # Authenticated — inject CSS now
@@ -485,9 +520,16 @@ if st.session_state.get("active_config_path"):
 # Sidebar logos
 st.sidebar.markdown(
     f"""
-    <div class="logo-container" style="padding: 10px 0; margin-bottom: 10px;">
-        <img src="data:image/png;base64,{logo_dash_light}" class="logo-light" style="max-height: 50px; margin: auto; display: block;" />
-        <img src="data:image/png;base64,{logo_dash_dark}" class="logo-dark" style="max-height: 50px; margin: auto; display: block;" />
+    <div class="logo-container side-by-side">
+        <div class="logo-item">
+            <img src="data:image/png;base64,{logo_dash_light}" class="logo-light" style="max-height: 40px; width: auto; display: block;" />
+            <img src="data:image/png;base64,{logo_dash_dark}" class="logo-dark" style="max-height: 40px; width: auto; display: block;" />
+        </div>
+        <div class="logo-divider"></div>
+        <div class="logo-item">
+            <img src="data:image/png;base64,{logo_almap_light}" class="logo-light" style="max-height: 40px; width: auto; display: block;" />
+            <img src="data:image/png;base64,{logo_almap_dark}" class="logo-dark" style="max-height: 40px; width: auto; display: block;" />
+        </div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -2069,18 +2111,4 @@ A sua **Curva de Saturação** dita o limite máximo quantitativo que a sua cart
                 "Nenhum dado encontrado para as configurações no caminho definido. Utilize a aba de Setup para gerar os datasets ou verifique o log backend."
             )
 
-# Sidebar footer logo (AlmapBBDO)
-st.sidebar.markdown("---")
-st.sidebar.markdown(
-    f"""
-    <div style="text-align: center; margin-top: 30px; margin-bottom: 10px;">
-        <p style="color: #888; font-size: 0.75rem; margin-bottom: 5px;">Powered by</p>
-        <div class="logo-container">
-            <img src="data:image/png;base64,{logo_almap_light}" class="logo-light" style="max-height: 25px; margin: auto; display: block;" />
-            <img src="data:image/png;base64,{logo_almap_dark}" class="logo-dark" style="max-height: 25px; margin: auto; display: block;" />
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
 
