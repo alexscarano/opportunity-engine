@@ -482,6 +482,17 @@ if st.session_state.get("active_config_path"):
     ):
         st.session_state["active_config_path"] = ""
 
+# Sidebar logos
+st.sidebar.markdown(
+    f"""
+    <div class="logo-container" style="padding: 10px 0; margin-bottom: 10px;">
+        <img src="data:image/png;base64,{logo_dash_light}" class="logo-light" style="max-height: 50px; margin: auto; display: block;" />
+        <img src="data:image/png;base64,{logo_dash_dark}" class="logo-dark" style="max-height: 50px; margin: auto; display: block;" />
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
 # Sidebar user card & Logout
 st.sidebar.markdown(f"**Conectado como:** {st.session_state['username']}")
 if st.sidebar.button("Sair/Logout", use_container_width=True):
@@ -2057,3 +2068,19 @@ A sua **Curva de Saturação** dita o limite máximo quantitativo que a sua cart
             st.info(
                 "Nenhum dado encontrado para as configurações no caminho definido. Utilize a aba de Setup para gerar os datasets ou verifique o log backend."
             )
+
+# Sidebar footer logo (AlmapBBDO)
+st.sidebar.markdown("---")
+st.sidebar.markdown(
+    f"""
+    <div style="text-align: center; margin-top: 30px; margin-bottom: 10px;">
+        <p style="color: #888; font-size: 0.75rem; margin-bottom: 5px;">Powered by</p>
+        <div class="logo-container">
+            <img src="data:image/png;base64,{logo_almap_light}" class="logo-light" style="max-height: 25px; margin: auto; display: block;" />
+            <img src="data:image/png;base64,{logo_almap_dark}" class="logo-dark" style="max-height: 25px; margin: auto; display: block;" />
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
