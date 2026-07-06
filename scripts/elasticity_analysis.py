@@ -274,14 +274,12 @@ def run_mmm_engine(config):
         + [df[col].mean() for col in active_spend_cols]
     )
 
-    # Run optimization
-    result = minimize(
+    # Run optimization from multiple starting points to avoid a bad local minimum
+    result = optimize_with_restarts(
         elasticity_objective_function,
         initial_params,
+        bounds,
         args=(df, y_lift, active_spend_cols),
-        bounds=bounds,
-        method="L-BFGS-B",
-        options={"maxiter": 500, "disp": False},
     )
 
     if not result.success:
