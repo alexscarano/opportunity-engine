@@ -101,7 +101,7 @@ class TestPresentationChartsTranslation(unittest.TestCase):
             # Title should be translated
             mock_set_title.assert_called_once()
             title_str = mock_set_title.call_args[0][0]
-            self.assertEqual(title_str, "Análise de Causal Impact: Real vs. Previsto")
+            self.assertEqual(title_str, "Análise de Impacto Causal: Real vs. Previsto")
 
     @patch("matplotlib.pyplot.savefig")
     @patch("matplotlib.pyplot.close")
