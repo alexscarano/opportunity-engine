@@ -269,70 +269,36 @@ PREMIUM_CSS = """
         background-color: var(--st-border-color, rgba(128, 128, 128, 0.3)) !important;
     }
 
-    /* Theme switching via JS attribute or Media Query fallback */
-    .logo-light {
-        display: block !important;
-    }
-    .logo-dark {
-        display: none !important;
+    /* Default: Light Mode logos (no filter, dark text on light background) */
+    .dash-logo, .almap-logo {
+        filter: none !important;
     }
 
-    /* Fallback: prefers-color-scheme (handles initial load/OS setting) */
+    /* Fallback: prefers-color-scheme (respects OS setting when theme is unconfigured) */
     @media (prefers-color-scheme: dark) {
-        .logo-light {
-            display: none !important;
+        .logo-container:not(.force-light) .dash-logo {
+            filter: invert(1) !important;
         }
-        .logo-dark {
-            display: block !important;
+        .logo-container:not(.force-light) .almap-logo {
+            filter: invert(1) hue-rotate(180deg) !important;
         }
     }
 
-    /* Explicit JS overrides (guarantees correct logos even if OS differs from Streamlit theme) */
-    body[data-theme-mode="light"] .logo-light,
-    html[data-theme-mode="light"] .logo-light {
-        display: block !important;
+    /* Explicit overrides configured in Streamlit settings */
+    .logo-container.force-dark .dash-logo {
+        filter: invert(1) !important;
     }
-    body[data-theme-mode="light"] .logo-dark,
-    html[data-theme-mode="light"] .logo-dark {
-        display: none !important;
+    .logo-container.force-dark .almap-logo {
+        filter: invert(1) hue-rotate(180deg) !important;
     }
 
-    body[data-theme-mode="dark"] .logo-light,
-    html[data-theme-mode="dark"] .logo-light {
-        display: none !important;
+    .logo-container.force-light .dash-logo {
+        filter: none !important;
     }
-    body[data-theme-mode="dark"] .logo-dark,
-    html[data-theme="dark"] .logo-dark {
-        display: block !important;
+    .logo-container.force-light .almap-logo {
+        filter: none !important;
     }
 </style>
-<script>
-    (function() {
-        const updateTheme = () => {
-            try {
-                const doc = window.parent.document;
-                const stApp = doc.querySelector('.stApp') || doc.body;
-                if (stApp) {
-                    const bg = window.getComputedStyle(stApp).backgroundColor;
-                    const rgb = bg.match(/[0-9]+/g);
-                    if (rgb && rgb.length >= 3) {
-                        const r = parseInt(rgb[0]);
-                        const g = parseInt(rgb[1]);
-                        const b = parseInt(rgb[2]);
-                        const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-                        const mode = luminance < 128 ? 'dark' : 'light';
-                        doc.body.setAttribute('data-theme-mode', mode);
-                        doc.documentElement.setAttribute('data-theme-mode', mode);
-                    }
-                }
-            } catch (e) {
-                console.error(e);
-            }
-        };
-        updateTheme();
-        setInterval(updateTheme, 500);
-    })();
-</script>
 """
 
 
@@ -394,6 +360,19 @@ logo_dash_dark = load_logo_base64("DASH_NEGATIVO.png")
 logo_almap_light = load_logo_base64("AF_ALMAPBBDO_LOGO_FINAL FILIPE-01.png")
 logo_almap_dark = load_logo_base64("AF_ALMAPBBDO_LOGO_FINAL FILIPE-02.png")
 
+# Detecta tema configurado no Streamlit para forçar cores se necessário
+theme_class = ""
+try:
+    theme = getattr(st.context, "theme", None)
+    if theme:
+        base = getattr(theme, "base", None)
+        if base == "light":
+            theme_class = "force-light"
+        elif base == "dark":
+            theme_class = "force-dark"
+except Exception:
+    pass
+
 init_db()
 # Restore session WITHOUT cookie component (synchronous, no rerun needed)
 if "user_id" not in st.session_state:
@@ -443,15 +422,13 @@ if "user_id" not in st.session_state:
     st.markdown(
         f"""
         <div style="text-align: center; margin-top: 50px; margin-bottom: 20px;">
-            <div class="logo-container side-by-side">
+            <div class="logo-container side-by-side {theme_class}">
                 <div class="logo-item">
-                    <img src="data:image/png;base64,{logo_dash_light}" class="logo-light" style="max-height: 55px; width: auto; display: block;" />
-                    <img src="data:image/png;base64,{logo_dash_dark}" class="logo-dark" style="max-height: 55px; width: auto; display: block;" />
+                    <img src="data:image/png;base64,{logo_dash_light}" class="dash-logo" style="max-height: 55px; width: auto; display: block;" />
                 </div>
                 <div class="logo-divider"></div>
                 <div class="logo-item">
-                    <img src="data:image/png;base64,{logo_almap_light}" class="logo-light" style="max-height: 55px; width: auto; display: block;" />
-                    <img src="data:image/png;base64,{logo_almap_dark}" class="logo-dark" style="max-height: 55px; width: auto; display: block;" />
+                    <img src="data:image/png;base64,{logo_almap_light}" class="almap-logo" style="max-height: 55px; width: auto; display: block;" />
                 </div>
             </div>
             <p style="color: #5f6368; font-size: 1.1rem; margin-top: 15px;">Por favor, faça o login para acessar a plataforma de Otimização de Oportunidades.</p>
@@ -538,15 +515,13 @@ if st.session_state.get("active_config_path"):
 # Sidebar logos
 st.sidebar.markdown(
     f"""
-    <div class="logo-container side-by-side">
+    <div class="logo-container side-by-side {theme_class}">
         <div class="logo-item">
-            <img src="data:image/png;base64,{logo_dash_light}" class="logo-light" style="max-height: 40px; width: auto; display: block;" />
-            <img src="data:image/png;base64,{logo_dash_dark}" class="logo-dark" style="max-height: 40px; width: auto; display: block;" />
+            <img src="data:image/png;base64,{logo_dash_light}" class="dash-logo" style="max-height: 40px; width: auto; display: block;" />
         </div>
         <div class="logo-divider"></div>
         <div class="logo-item">
-            <img src="data:image/png;base64,{logo_almap_light}" class="logo-light" style="max-height: 40px; width: auto; display: block;" />
-            <img src="data:image/png;base64,{logo_almap_dark}" class="logo-dark" style="max-height: 40px; width: auto; display: block;" />
+            <img src="data:image/png;base64,{logo_almap_light}" class="almap-logo" style="max-height: 40px; width: auto; display: block;" />
         </div>
     </div>
     """,
