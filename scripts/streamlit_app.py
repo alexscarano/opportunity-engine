@@ -268,7 +268,71 @@ PREMIUM_CSS = """
         height: 35px;
         background-color: var(--st-border-color, rgba(128, 128, 128, 0.3)) !important;
     }
+
+    /* Theme switching via JS attribute or Media Query fallback */
+    .logo-light {
+        display: block !important;
+    }
+    .logo-dark {
+        display: none !important;
+    }
+
+    /* Fallback: prefers-color-scheme (handles initial load/OS setting) */
+    @media (prefers-color-scheme: dark) {
+        .logo-light {
+            display: none !important;
+        }
+        .logo-dark {
+            display: block !important;
+        }
+    }
+
+    /* Explicit JS overrides (guarantees correct logos even if OS differs from Streamlit theme) */
+    body[data-theme-mode="light"] .logo-light,
+    html[data-theme-mode="light"] .logo-light {
+        display: block !important;
+    }
+    body[data-theme-mode="light"] .logo-dark,
+    html[data-theme-mode="light"] .logo-dark {
+        display: none !important;
+    }
+
+    body[data-theme-mode="dark"] .logo-light,
+    html[data-theme-mode="dark"] .logo-light {
+        display: none !important;
+    }
+    body[data-theme-mode="dark"] .logo-dark,
+    html[data-theme="dark"] .logo-dark {
+        display: block !important;
+    }
 </style>
+<script>
+    (function() {
+        const updateTheme = () => {
+            try {
+                const doc = window.parent.document;
+                const stApp = doc.querySelector('.stApp') || doc.body;
+                if (stApp) {
+                    const bg = window.getComputedStyle(stApp).backgroundColor;
+                    const rgb = bg.match(/[0-9]+/g);
+                    if (rgb && rgb.length >= 3) {
+                        const r = parseInt(rgb[0]);
+                        const g = parseInt(rgb[1]);
+                        const b = parseInt(rgb[2]);
+                        const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+                        const mode = luminance < 128 ? 'dark' : 'light';
+                        doc.body.setAttribute('data-theme-mode', mode);
+                        doc.documentElement.setAttribute('data-theme-mode', mode);
+                    }
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        };
+        updateTheme();
+        setInterval(updateTheme, 500);
+    })();
+</script>
 """
 
 
@@ -330,39 +394,6 @@ logo_dash_dark = load_logo_base64("DASH_NEGATIVO.png")
 logo_almap_light = load_logo_base64("AF_ALMAPBBDO_LOGO_FINAL FILIPE-01.png")
 logo_almap_dark = load_logo_base64("AF_ALMAPBBDO_LOGO_FINAL FILIPE-02.png")
 
-# Detecta tema atual do Streamlit
-def check_is_dark():
-    try:
-        theme = getattr(st.context, "theme", None)
-        if theme:
-            base = getattr(theme, "base", None)
-            if base == "dark":
-                return True
-            if base == "light":
-                return False
-            
-            # Se base for None (ex: usar configuração do sistema), verifica a cor de fundo
-            bg = getattr(theme, "background_color", None)
-            if bg:
-                bg = bg.lstrip("#")
-                if len(bg) == 3:
-                    bg = "".join([c*2 for c in bg])
-                if len(bg) == 6:
-                    r = int(bg[0:2], 16)
-                    g = int(bg[2:4], 16)
-                    b = int(bg[4:6], 16)
-                    # Luminância relativa
-                    return (0.299 * r + 0.587 * g + 0.114 * b) < 128
-    except Exception:
-        pass
-    # default: True (tema escuro é o padrão do sistema do usuário)
-    return True
-
-is_dark = check_is_dark()
-logo_dash = logo_dash_dark if is_dark else logo_dash_light
-logo_almap = logo_almap_dark if is_dark else logo_almap_light
-
-
 init_db()
 # Restore session WITHOUT cookie component (synchronous, no rerun needed)
 if "user_id" not in st.session_state:
@@ -414,11 +445,13 @@ if "user_id" not in st.session_state:
         <div style="text-align: center; margin-top: 50px; margin-bottom: 20px;">
             <div class="logo-container side-by-side">
                 <div class="logo-item">
-                    <img src="data:image/png;base64,{logo_dash}" style="max-height: 55px; width: auto; display: block;" />
+                    <img src="data:image/png;base64,{logo_dash_light}" class="logo-light" style="max-height: 55px; width: auto; display: block;" />
+                    <img src="data:image/png;base64,{logo_dash_dark}" class="logo-dark" style="max-height: 55px; width: auto; display: block;" />
                 </div>
                 <div class="logo-divider"></div>
                 <div class="logo-item">
-                    <img src="data:image/png;base64,{logo_almap}" style="max-height: 55px; width: auto; display: block;" />
+                    <img src="data:image/png;base64,{logo_almap_light}" class="logo-light" style="max-height: 55px; width: auto; display: block;" />
+                    <img src="data:image/png;base64,{logo_almap_dark}" class="logo-dark" style="max-height: 55px; width: auto; display: block;" />
                 </div>
             </div>
             <p style="color: #5f6368; font-size: 1.1rem; margin-top: 15px;">Por favor, faça o login para acessar a plataforma de Otimização de Oportunidades.</p>
@@ -507,11 +540,13 @@ st.sidebar.markdown(
     f"""
     <div class="logo-container side-by-side">
         <div class="logo-item">
-            <img src="data:image/png;base64,{logo_dash}" style="max-height: 40px; width: auto; display: block;" />
+            <img src="data:image/png;base64,{logo_dash_light}" class="logo-light" style="max-height: 40px; width: auto; display: block;" />
+            <img src="data:image/png;base64,{logo_dash_dark}" class="logo-dark" style="max-height: 40px; width: auto; display: block;" />
         </div>
         <div class="logo-divider"></div>
         <div class="logo-item">
-            <img src="data:image/png;base64,{logo_almap}" style="max-height: 40px; width: auto; display: block;" />
+            <img src="data:image/png;base64,{logo_almap_light}" class="logo-light" style="max-height: 40px; width: auto; display: block;" />
+            <img src="data:image/png;base64,{logo_almap_dark}" class="logo-dark" style="max-height: 40px; width: auto; display: block;" />
         </div>
     </div>
     """,
