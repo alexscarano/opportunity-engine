@@ -20,6 +20,7 @@ from dashboard_charts import (
     build_sessions_bar_chart,
     build_response_curve_individual,
     find_saturation_point,
+    compute_incremental_cpa,
 )
 
 
@@ -333,6 +334,26 @@ class TestFindSaturationPoint(unittest.TestCase):
         result = find_saturation_point(df, optimal_point)
 
         self.assertEqual(result["Daily_Investment"], optimal_point["Daily_Investment"])
+
+
+class TestComputeIncrementalCpa(unittest.TestCase):
+
+    def test_returns_ratio_when_kpi_incremental_is_positive(self):
+        result = compute_incremental_cpa(
+            pd.Series([1000.0, 1500000.0]), pd.Series([100.0, 142600.0])
+        )
+        self.assertAlmostEqual(result[0], 10.0)
+        self.assertAlmostEqual(result[1], 1500000.0 / 142600.0)
+
+    def test_returns_nan_when_kpi_incremental_is_not_positive(self):
+        # Mirrors the broken "Cenário de Saturação" row: both incremental
+        # investment and incremental KPI negative -- not a meaningful ratio,
+        # must not silently become a literal 0.
+        result = compute_incremental_cpa(
+            pd.Series([-2984379.93, 500.0]), pd.Series([-850025.0, 0.0])
+        )
+        self.assertTrue(np.isnan(result[0]))
+        self.assertTrue(np.isnan(result[1]))
 
 
 if __name__ == "__main__":

@@ -50,6 +50,18 @@ def find_saturation_point(df, optimal_point):
     return df.iloc[saturation_idx]
 
 
+def compute_incremental_cpa(investimento_incremental, kpi_incremental):
+    """
+    Ratio of incremental investment to incremental KPI ("iCPA"), or NaN when
+    the scenario didn't produce a positive KPI gain.
+
+    A non-positive incremental KPI makes the ratio not meaningful (it is not
+    a real, free-or-cheap cost -- it's a scenario that performs worse than the
+    baseline), so it must not be silently rendered as a literal 0.
+    """
+    return np.where(kpi_incremental > 0, investimento_incremental / kpi_incremental, np.nan)
+
+
 def build_icpa_curve(
     df_plot,
     optimal_point,
