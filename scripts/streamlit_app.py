@@ -381,12 +381,15 @@ if "user_id" not in st.session_state:
 if "user_id" not in st.session_state:
     st.markdown(PREMIUM_CSS, unsafe_allow_html=True)
     st.markdown(
-        """
+        f"""
         <div style="text-align: center; margin-top: 50px; margin-bottom: 20px;">
-            <h1 style="color: #1a73e8; font-size: 2.5rem; font-weight: 700;">Opportunity Engine</h1>
-            <p style="color: #5f6368; font-size: 1.1rem;">Por favor, faça o login para acessar a plataforma de Otimização de Oportunidades.</p>
+            <div class="logo-container">
+                <img src="data:image/png;base64,{logo_dash_light}" class="logo-light" style="max-height: 80px; margin: auto; display: block;" />
+                <img src="data:image/png;base64,{logo_dash_dark}" class="logo-dark" style="max-height: 80px; margin: auto; display: block;" />
+            </div>
+            <p style="color: #5f6368; font-size: 1.1rem; margin-top: 15px;">Por favor, faça o login para acessar a plataforma de Otimização de Oportunidades.</p>
         </div>
-    """,
+        """,
         unsafe_allow_html=True,
     )
 
@@ -427,6 +430,20 @@ if "user_id" not in st.session_state:
                         st.rerun()
                     except ValueError as e:
                         st.error(str(e))
+        
+        # Footer logos
+        st.markdown(
+            f"""
+            <div style="text-align: center; margin-top: 40px; margin-bottom: 20px;">
+                <p style="color: #888; font-size: 0.8rem; margin-bottom: 8px;">Powered by</p>
+                <div class="logo-container">
+                    <img src="data:image/png;base64,{logo_almap_light}" class="logo-light" style="max-height: 30px; margin: auto; display: block;" />
+                    <img src="data:image/png;base64,{logo_almap_dark}" class="logo-dark" style="max-height: 30px; margin: auto; display: block;" />
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
     st.stop()
 
 # Authenticated — inject CSS now
