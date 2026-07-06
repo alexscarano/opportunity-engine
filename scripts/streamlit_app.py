@@ -239,6 +239,39 @@ PREMIUM_CSS = """
         background-color: rgba(26, 115, 232, 0.1);
         color: var(--text-color);
     }
+    
+    /* Logo styling and responsive switching */
+    .logo-container {
+        text-align: center;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    .logo-light {
+        display: block !important;
+    }
+    .logo-dark {
+        display: none !important;
+    }
+    
+    @media (prefers-color-scheme: dark) {
+        .logo-light {
+            display: none !important;
+        }
+        .logo-dark {
+            display: block !important;
+        }
+    }
+    
+    [data-theme="dark"] .logo-light,
+    html[data-theme="dark"] .logo-light {
+        display: none !important;
+    }
+    [data-theme="dark"] .logo-dark,
+    html[data-theme="dark"] .logo-dark {
+        display: block !important;
+    }
 </style>
 """
 
