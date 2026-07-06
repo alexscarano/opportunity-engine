@@ -312,6 +312,28 @@ from dashboard_charts import (
     compute_incremental_cpa,
 )
 
+import base64
+
+@st.cache_data(ttl=3600)
+def load_logo_base64(filename):
+    """
+    Carrega uma imagem da pasta Logos e retorna como string base64.
+    """
+    logos_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "Logos")
+    filepath = os.path.join(logos_dir, filename)
+    try:
+        with open(filepath, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+    except Exception as e:
+        logger.error(f"Erro ao carregar logo {filename}: {e}")
+        return ""
+
+# Carrega os logos necessários
+logo_dash_light = load_logo_base64("DASH_POSITIVO (1).png")
+logo_dash_dark = load_logo_base64("DASH_NEGATIVO.png")
+logo_almap_light = load_logo_base64("AF_ALMAPBBDO_LOGO_FINAL FILIPE-01.png")
+logo_almap_dark = load_logo_base64("AF_ALMAPBBDO_LOGO_FINAL FILIPE-04.png")
+
 init_db()
 # Restore session WITHOUT cookie component (synchronous, no rerun needed)
 if "user_id" not in st.session_state:
