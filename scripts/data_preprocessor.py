@@ -240,6 +240,34 @@ def robust_numeric_parsing(series, column_name="valor"):
     return result
 
 
+def read_csv_robust(path, **kwargs):
+    """
+    Reads a CSV tolerating BOM/latin-1 encoding and ','/';'/tab
+    delimiters, and strips whitespace from header names.
+    """
+    try:
+        with open(path, "r", encoding="utf-8-sig") as f:
+            sample = f.read(8192)
+        encoding = "utf-8-sig"
+    except UnicodeDecodeError:
+        with open(path, "r", encoding="latin-1") as f:
+            sample = f.read(8192)
+        encoding = "latin-1"
+        print(f"   - AVISO: Encoding não-UTF-8 detectado em '{path}'. Usando 'latin-1'.")
+
+    try:
+        delimiter = csv.Sniffer().sniff(sample, delimiters=",;\t").delimiter
+    except csv.Error:
+        delimiter = ","
+
+    if delimiter != ",":
+        print(f"   - AVISO: Delimitador '{delimiter}' detectado em '{path}' (não é vírgula).")
+
+    df = pd.read_csv(path, encoding=encoding, sep=delimiter, **kwargs)
+    df.columns = df.columns.str.strip()
+    return df
+
+
 def load_and_prepare_data(config):
     """
     Loads and prepares the KPI, investment, and trends data based on the config.

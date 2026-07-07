@@ -7,7 +7,12 @@ import pytest
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "scripts")))
 
-from data_preprocessor import COLUMN_NAME_HINTS, resolve_column, robust_numeric_parsing
+from data_preprocessor import (
+    COLUMN_NAME_HINTS,
+    resolve_column,
+    robust_numeric_parsing,
+    read_csv_robust,
+)
 
 
 def test_column_name_hints_content():
@@ -142,3 +147,35 @@ def test_robust_numeric_parsing_unparseable_value_logs_warning(capsys):
     assert result.iloc[0] != result.iloc[0]  # NaN
     assert result.iloc[1] == 100.5
     assert "AVISO" in capsys.readouterr().out
+
+
+def test_read_csv_robust_default_comma(tmp_path):
+    path = tmp_path / "plain.csv"
+    path.write_text("Date,kpi\n2025-01-01,100\n", encoding="utf-8")
+    df = read_csv_robust(str(path))
+    assert df.columns.tolist() == ["Date", "kpi"]
+    assert df.iloc[0]["kpi"] == 100
+
+
+def test_read_csv_robust_semicolon_delimiter(tmp_path):
+    path = tmp_path / "semicolon.csv"
+    path.write_text(
+        "dates;product_group;total_revenue\n2025-01-01;GOOGLE;1.234,56\n", encoding="utf-8"
+    )
+    df = read_csv_robust(str(path))
+    assert df.columns.tolist() == ["dates", "product_group", "total_revenue"]
+    assert df.iloc[0]["total_revenue"] == "1.234,56"
+
+
+def test_read_csv_robust_strips_bom(tmp_path):
+    path = tmp_path / "bom.csv"
+    path.write_text("channel,date,investment\nAWIN,01/01/2026,2122\n", encoding="utf-8-sig")
+    df = read_csv_robust(str(path))
+    assert df.columns.tolist() == ["channel", "date", "investment"]
+
+
+def test_read_csv_robust_strips_column_whitespace(tmp_path):
+    path = tmp_path / "spaced.csv"
+    path.write_text(" Data , Investimento \n2025-01-01,100\n", encoding="utf-8")
+    df = read_csv_robust(str(path))
+    assert df.columns.tolist() == ["Data", "Investimento"]
