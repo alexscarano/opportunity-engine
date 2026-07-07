@@ -12,6 +12,7 @@ from data_preprocessor import (
     resolve_column,
     robust_numeric_parsing,
     read_csv_robust,
+    load_and_prepare_data,
 )
 
 
@@ -179,3 +180,118 @@ def test_read_csv_robust_strips_column_whitespace(tmp_path):
     path.write_text(" Data , Investimento \n2025-01-01,100\n", encoding="utf-8")
     df = read_csv_robust(str(path))
     assert df.columns.tolist() == ["Data", "Investimento"]
+
+
+def _write_csv(path, content):
+    path.write_text(content, encoding="utf-8")
+    return str(path)
+
+
+def test_load_and_prepare_data_handles_br_locale_semicolon_investment_file(tmp_path):
+    """Reproduces the original bug report: BR-formatted, semicolon-delimited
+    investment CSV must no longer crash pivot_table with a dtype TypeError.
+    """
+    investment_path = _write_csv(
+        tmp_path / "investment.csv",
+        "dates;product_group;total_revenue\n"
+        "2025-01-01;GOOGLE;1.234,56\n"
+        "2025-01-02;GOOGLE;2.345,67\n"
+        "2025-01-03;GOOGLE;3.456,78\n",
+    )
+    performance_path = _write_csv(
+        tmp_path / "performance.csv",
+        "date,kpi\n2025-01-01,100\n2025-01-02,150\n2025-01-03,200\n",
+    )
+
+    config = {
+        "investment_file_path": investment_path,
+        "performance_file_path": performance_path,
+        "performance_kpi_column": "kpi",
+        "date_formats": {
+            "investment_file": "%Y-%m-%d",
+            "performance_file": "%Y-%m-%d",
+        },
+        "treat_outliers": False,
+    }
+
+    kpi_df, daily_investment_df, trends_df, correlation_matrix = load_and_prepare_data(config)
+
+    assert daily_investment_df["investment"].tolist() == [1234.56, 2345.67, 3456.78]
+    assert kpi_df["kpi"].tolist() == [100.0, 150.0, 200.0]
+    assert (daily_investment_df["Product Group"] == "GOOGLE").all()
+
+
+def test_load_and_prepare_data_normalizes_channel_case(tmp_path):
+    investment_path = _write_csv(
+        tmp_path / "investment.csv",
+        "dates,product_group,total_revenue\n"
+        "2025-01-01,Google Ads,100\n"
+        "2025-01-02,GOOGLE ADS,200\n",
+    )
+    performance_path = _write_csv(
+        tmp_path / "performance.csv", "date,kpi\n2025-01-01,10\n2025-01-02,20\n"
+    )
+    config = {
+        "investment_file_path": investment_path,
+        "performance_file_path": performance_path,
+        "performance_kpi_column": "kpi",
+        "date_formats": {
+            "investment_file": "%Y-%m-%d",
+            "performance_file": "%Y-%m-%d",
+        },
+        "treat_outliers": False,
+    }
+
+    _, daily_investment_df, _, _ = load_and_prepare_data(config)
+
+    assert daily_investment_df["Product Group"].unique().tolist() == ["GOOGLE ADS"]
+
+
+def test_load_and_prepare_data_raises_clear_error_on_empty_result(tmp_path):
+    investment_path = _write_csv(
+        tmp_path / "investment.csv",
+        "dates,product_group,total_revenue\nnot-a-date,GOOGLE,100\n",
+    )
+    performance_path = _write_csv(
+        tmp_path / "performance.csv", "date,kpi\n2025-01-01,10\n"
+    )
+    config = {
+        "investment_file_path": investment_path,
+        "performance_file_path": performance_path,
+        "performance_kpi_column": "kpi",
+        "date_formats": {
+            "investment_file": "%Y-%m-%d",
+            "performance_file": "%Y-%m-%d",
+        },
+        "treat_outliers": False,
+    }
+
+    with pytest.raises(Exception, match="investment"):
+        load_and_prepare_data(config)
+
+
+def test_load_and_prepare_data_resolves_mismatched_column_name(tmp_path):
+    """Investment file uses 'Valor' instead of the configured 'total_revenue' —
+    should auto-resolve via COLUMN_NAME_HINTS instead of failing.
+    """
+    investment_path = _write_csv(
+        tmp_path / "investment.csv",
+        "dates,product_group,Valor\n2025-01-01,GOOGLE,100\n2025-01-02,GOOGLE,200\n",
+    )
+    performance_path = _write_csv(
+        tmp_path / "performance.csv", "date,kpi\n2025-01-01,10\n2025-01-02,20\n"
+    )
+    config = {
+        "investment_file_path": investment_path,
+        "performance_file_path": performance_path,
+        "performance_kpi_column": "kpi",
+        "date_formats": {
+            "investment_file": "%Y-%m-%d",
+            "performance_file": "%Y-%m-%d",
+        },
+        "treat_outliers": False,
+    }
+
+    _, daily_investment_df, _, _ = load_and_prepare_data(config)
+
+    assert daily_investment_df["investment"].tolist() == [100.0, 200.0]

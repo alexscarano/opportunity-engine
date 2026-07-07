@@ -283,22 +283,30 @@ def load_and_prepare_data(config):
         date_formats = config.get("date_formats", {})
 
         # --- Load Data ---
-        kpi_df = pd.read_csv(config["performance_file_path"], thousands=",")
-        daily_investment_df = pd.read_csv(config["investment_file_path"], thousands=",")
+        kpi_df = read_csv_robust(config["performance_file_path"])
+        daily_investment_df = read_csv_robust(config["investment_file_path"])
 
         if "generic_trends_file_path" in config and config["generic_trends_file_path"]:
             try:
-                trends_df = pd.read_csv(
-                    config["generic_trends_file_path"], thousands=","
+                trends_df = read_csv_robust(config["generic_trends_file_path"])
+                trends_date_col = resolve_column(
+                    trends_df,
+                    trends_map.get("date_col", "Start Date"),
+                    "date",
+                    "coluna de data do arquivo de tendências",
+                )
+                trends_value_col = resolve_column(
+                    trends_df,
+                    trends_map.get("trends_col", "Ad Opportunities"),
+                    "trends",
+                    "coluna de valor do arquivo de tendências",
                 )
                 trends_df.rename(
-                    columns={
-                        trends_map.get("date_col", "Start Date"): "Date",
-                        trends_map.get(
-                            "trends_col", "Ad Opportunities"
-                        ): "Generic Searches",
-                    },
+                    columns={trends_date_col: "Date", trends_value_col: "Generic Searches"},
                     inplace=True,
+                )
+                trends_df["Generic Searches"] = robust_numeric_parsing(
+                    trends_df["Generic Searches"], column_name="Generic Searches"
                 )
                 trends_df["Date"] = robust_date_parsing(
                     trends_df["Date"],
@@ -323,41 +331,54 @@ def load_and_prepare_data(config):
 
         # --- Dynamically Rename Columns ---
         user_kpi_col = config.get("performance_kpi_column", "Sessions")
-        kpi_df.rename(
-            columns={
-                perf_map.get("date_col", "date"): "Date",
-                perf_map.get("kpi_col", user_kpi_col): "kpi",
-            },
-            inplace=True,
+        kpi_date_col = resolve_column(
+            kpi_df, perf_map.get("date_col", "date"), "date", "coluna de data do arquivo de performance"
         )
+        kpi_value_col = resolve_column(
+            kpi_df,
+            perf_map.get("kpi_col", user_kpi_col),
+            "kpi",
+            "coluna de KPI do arquivo de performance",
+        )
+        kpi_df.rename(columns={kpi_date_col: "Date", kpi_value_col: "kpi"}, inplace=True)
+        kpi_df["kpi"] = robust_numeric_parsing(kpi_df["kpi"], column_name="kpi")
 
-        # --- Clean percentage/thousands strings and convert to numeric ---
-        if kpi_df["kpi"].dtype == "object":
-            # Handle potential string formatting (e.g. '1.234,56' or '1,234.56')
-            # If thousands=',' was used in read_csv, pandas might have already handled it if it matched.
-            # But let's be safe for cases where it's mixed with symbols.
-            kpi_df["kpi"] = kpi_df["kpi"].str.replace("%", "", regex=False)
-            # If there are still commas and dots, we need to know the locale.
-            # Assuming standard numeric if read_csv thousands worked.
-            kpi_df["kpi"] = pd.to_numeric(
-                kpi_df["kpi"].str.replace(",", "", regex=False), errors="coerce"
-            )
-
-        kpi_df["kpi"] = pd.to_numeric(kpi_df["kpi"], errors="coerce")
-
+        inv_date_col = resolve_column(
+            daily_investment_df,
+            inv_map.get("date_col", "dates"),
+            "date",
+            "coluna de data do arquivo de investimento",
+        )
+        inv_channel_col = resolve_column(
+            daily_investment_df,
+            inv_map.get("channel_col", "product_group"),
+            "channel",
+            "coluna de canal do arquivo de investimento",
+        )
+        inv_value_col = resolve_column(
+            daily_investment_df,
+            inv_map.get("investment_col", "total_revenue"),
+            "investment",
+            "coluna de investimento do arquivo de investimento",
+        )
         daily_investment_df.rename(
             columns={
-                inv_map.get("date_col", "dates"): "Date",
-                inv_map.get("channel_col", "product_group"): "Product Group",
-                inv_map.get("investment_col", "total_revenue"): "investment",
+                inv_date_col: "Date",
+                inv_channel_col: "Product Group",
+                inv_value_col: "investment",
             },
             inplace=True,
         )
 
-        # Standardize product group names by stripping whitespace
-        daily_investment_df["Product Group"] = daily_investment_df[
-            "Product Group"
-        ].str.strip()
+        # Standardize product group names: strip whitespace and normalize case so
+        # the same channel exported with inconsistent casing doesn't fragment
+        # into separate pivot_table columns.
+        daily_investment_df["Product Group"] = (
+            daily_investment_df["Product Group"].str.strip().str.upper()
+        )
+        daily_investment_df["investment"] = robust_numeric_parsing(
+            daily_investment_df["investment"], column_name="investment"
+        )
 
         # --- Date Formatting ---
         kpi_df["Date"] = robust_date_parsing(
@@ -372,6 +393,19 @@ def load_and_prepare_data(config):
         daily_investment_df.dropna(
             subset=["Date", "investment", "Product Group"], inplace=True
         )
+
+        if kpi_df.empty:
+            raise ValueError(
+                f"Nenhuma linha válida restou no arquivo de performance "
+                f"('{config['performance_file_path']}') após a limpeza. Verifique o formato de "
+                f"data e do KPI no arquivo."
+            )
+        if daily_investment_df.empty:
+            raise ValueError(
+                f"Nenhuma linha válida restou no arquivo de investimento "
+                f"('{config['investment_file_path']}') após a limpeza. Verifique o formato de "
+                f"data, canal e investimento no arquivo."
+            )
 
         # --- Conditional Outlier Treatment ---
         outlier_config = config.get("treat_outliers", False)
