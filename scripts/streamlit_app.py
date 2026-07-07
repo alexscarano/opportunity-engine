@@ -1324,7 +1324,7 @@ with tab3:
                     active_spend_cols = [
                         col
                         for col in investment_pivot_df.columns
-                        if investment_pivot_df[col].mean() > 0 and col != "Other"
+                        if investment_pivot_df[col].mean() > 0 and col != "OTHER"
                     ]
                     total_avg_daily_spend = sum(
                         investment_pivot_df[col].mean() for col in active_spend_cols

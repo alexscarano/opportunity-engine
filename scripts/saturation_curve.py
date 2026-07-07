@@ -198,7 +198,7 @@ def run_global_saturation_analysis(config):
         channel_proportions_global = None
 
         all_channels = [
-            ch for ch in daily_investment_df["Product Group"].unique() if ch != "Other"
+            ch for ch in daily_investment_df["Product Group"].unique() if ch != "OTHER"
         ]
         print(
             f"   - Found {len(all_channels)} unique channels to analyze: {', '.join(all_channels)}"
