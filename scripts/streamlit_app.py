@@ -347,6 +347,7 @@ from dashboard_charts import (
     find_saturation_point,
     compute_incremental_cpa,
 )
+from data_preprocessor import COLUMN_NAME_HINTS
 
 import base64
 
@@ -874,7 +875,7 @@ with tab1:
                     try:
                         df = pd.read_csv(file_path, nrows=0)
                         for col in df.columns:
-                            if col.lower() in ["date", "dates", "data", "day", "dia"]:
+                            if col.lower() in COLUMN_NAME_HINTS["date"]:
                                 return col
                         return df.columns[0]
                     except:
@@ -886,16 +887,7 @@ with tab1:
                     try:
                         df = pd.read_csv(file_path, nrows=0)
                         for col in df.columns:
-                            if col.lower() in [
-                                "channel",
-                                "product_group",
-                                "product",
-                                "media",
-                                "source",
-                                "campaign",
-                                "canal",
-                                "grupo",
-                            ]:
+                            if col.lower() in COLUMN_NAME_HINTS["channel"]:
                                 return col
                         return df.columns[0]
                     except:
@@ -907,15 +899,7 @@ with tab1:
                     try:
                         df = pd.read_csv(file_path, nrows=0)
                         for col in df.columns:
-                            if col.lower() in [
-                                "investment",
-                                "spend",
-                                "cost",
-                                "investimento",
-                                "revenue",
-                                "total_revenue",
-                                "valor",
-                            ]:
+                            if col.lower() in COLUMN_NAME_HINTS["investment"]:
                                 return col
                         return df.columns[-1]
                     except:
@@ -927,14 +911,7 @@ with tab1:
                     try:
                         df = pd.read_csv(file_path, nrows=0)
                         for col in df.columns:
-                            if col.lower() in [
-                                "searches",
-                                "trends",
-                                "opportunities",
-                                "ad opportunities",
-                                "volume",
-                                "generic searches",
-                            ]:
+                            if col.lower() in COLUMN_NAME_HINTS["trends"]:
                                 return col
                         return df.columns[-1]
                     except:
@@ -948,15 +925,7 @@ with tab1:
                         if user_kpi in df.columns:
                             return user_kpi
                         for col in df.columns:
-                            if col.lower() in [
-                                "kpi",
-                                "sessions",
-                                "conversions",
-                                "revenue",
-                                "conversoes",
-                                "cliques",
-                                "clicks",
-                            ]:
+                            if col.lower() in COLUMN_NAME_HINTS["kpi"]:
                                 return col
                         return df.columns[1] if len(df.columns) > 1 else df.columns[0]
                     except:
