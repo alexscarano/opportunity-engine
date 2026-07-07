@@ -31,7 +31,8 @@ acionável em vez de um erro claro na hora da leitura.
   heurística falhar de forma sistemática para um cliente específico, isso é um problema separado a
   avaliar depois com dados reais.
 - Qualquer mudança em `local_main.py`, `local_main-without-gemini.py`, `streamlit_app.py` além do que for
-  estritamente necessário para consumir as novas funções.
+  estritamente necessário para consumir as novas funções — exceto a deduplicação descrita no item 2, que
+  é uma extração pura sem mudar comportamento do fluxo de upload.
 
 ### Fixes
 
@@ -62,11 +63,30 @@ espaço à volta) — o `rename` simplesmente não renomeia nada, e o erro real 
 Nova função `resolve_column(df, configured_name, purpose)`:
 1. Tenta match exato.
 2. Tenta match tolerante (`.strip().lower()` dos dois lados).
-3. Se não encontrar, `raise ValueError` citando o nome configurado, o `purpose` (ex.: `"coluna de data do
-   arquivo de investimento"`) e a lista de colunas disponíveis no arquivo.
+3. **Fallback por nome comum**: se `purpose` tiver uma lista de sinônimos conhecidos (ver abaixo), procura
+   colunas do dataframe cujo nome (lower) bata com algum sinônimo. Exatamente 1 candidato → usa e loga
+   `AVISO` dizendo qual coluna foi auto-detectada em vez da configurada (visível, não silencioso). Mais de
+   1 candidato → não adivinha, cai pro erro do passo 4 listando os candidatos ambíguos — escolher errado
+   aqui corrompe o dado inteiro silenciosamente, então esse caso *tem* que forçar decisão manual no
+   config.
+4. Se não encontrar (ou ficou ambíguo no passo 3), `raise ValueError` citando o nome configurado, o
+   `purpose` (ex.: `"coluna de data do arquivo de investimento"`) e a lista de colunas disponíveis no
+   arquivo (mais os candidatos ambíguos, se for o caso).
 
 Usada para resolver todas as colunas hoje lidas via `inv_map`/`perf_map`/`trends_map` antes de renomear,
 substituindo os `.get(...)` diretos passados pro `rename`.
+
+**Sinônimos reaproveitados, não duplicados**: `streamlit_app.py` já tem exatamente essa lógica de
+"advinha a coluna por nome comum" implementada 5x local (`get_date_col`, `get_channel_col`,
+`get_investment_col`, `get_trends_col`, `get_kpi_col`, linhas ~871-963) — só que roda uma vez, na hora do
+upload, pra pré-preencher o config, com fallback "primeira/última coluna" quando nada bate. Em vez de
+duplicar essas listas dentro de `data_preprocessor.py`, elas saem de dentro das funções locais e viram um
+dict módulo-level `COLUMN_NAME_HINTS` em `data_preprocessor.py` (uma entrada por `purpose`: date, channel,
+investment, kpi, trends_date, trends_value), e as 5 funções em `streamlit_app.py` passam a importar de lá
+em vez de manter a lista hardcoded duas vezes. Sem essa unificação, as duas listas divergem com o tempo
+(alguém adiciona um sinônimo num lugar e esquece do outro). O comportamento de fallback "primeira/última
+coluna" de `streamlit_app.py` continua exatamente como está — só a fonte da lista de sinônimos muda,
+`resolve_column` é código novo e não substitui as 5 funções, só compartilha o dicionário com elas.
 
 #### 3. Parsing numérico robusto (`robust_numeric_parsing`)
 Nova função aplicada uniformemente em `kpi_df["kpi"]`, `daily_investment_df["investment"]` e
@@ -124,8 +144,13 @@ sem fixtures/framework extra):
 - `read_csv_robust`: arquivo com `;` como delimitador, arquivo com BOM UTF-8, arquivo comum com `,` —
   todos devem produzir as mesmas colunas/valores esperados; nomes de coluna com espaço (`" Data "`) saem
   stripados.
-- `resolve_column`: match exato, match tolerante a espaço/case, coluna ausente levanta `ValueError` com o
-  nome configurado e a lista de colunas disponíveis na mensagem.
+- `resolve_column`: match exato, match tolerante a espaço/case, fallback por sinônimo com 1 candidato
+  (auto-resolve com aviso), fallback por sinônimo com 2+ candidatos (erro listando os ambíguos), coluna
+  sem match nenhum levanta `ValueError` com o nome configurado e a lista de colunas disponíveis na
+  mensagem.
+- `streamlit_app.py` continua funcionando após a extração do `COLUMN_NAME_HINTS`: reexecutar (ou testar
+  diretamente) `get_investment_col`/`get_date_col`/etc. contra os mesmos casos que já funcionam hoje,
+  confirmando que a extração não mudou o resultado.
 - Normalização de canal: `daily_investment_df` sintético com `"Google Ads"` e `"GOOGLE ADS"` em linhas
   diferentes deve colapsar para uma única categoria depois do processamento.
 - Guarda de dataframe vazio: CSV sintético onde todas as datas são inválidas deve levantar `ValueError`
