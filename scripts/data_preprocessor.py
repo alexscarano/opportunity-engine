@@ -271,6 +271,78 @@ def read_csv_robust(path, **kwargs):
     return df
 
 
+def guess_date_col(file_path):
+    """Guesses the date column of an uploaded CSV to pre-fill the UI."""
+    if not file_path:
+        return "date"
+    try:
+        df = read_csv_robust(file_path, nrows=0)
+        for col in df.columns:
+            if col.lower() in COLUMN_NAME_HINTS["date"]:
+                return col
+        return df.columns[0]
+    except Exception:
+        return "date"
+
+
+def guess_channel_col(file_path):
+    """Guesses the channel column of an uploaded CSV to pre-fill the UI."""
+    if not file_path:
+        return "product_group"
+    try:
+        df = read_csv_robust(file_path, nrows=0)
+        for col in df.columns:
+            if col.lower() in COLUMN_NAME_HINTS["channel"]:
+                return col
+        return df.columns[0]
+    except Exception:
+        return "product_group"
+
+
+def guess_investment_col(file_path):
+    """Guesses the investment column of an uploaded CSV to pre-fill the UI."""
+    if not file_path:
+        return "total_revenue"
+    try:
+        df = read_csv_robust(file_path, nrows=0)
+        for col in df.columns:
+            if col.lower() in COLUMN_NAME_HINTS["investment"]:
+                return col
+        return df.columns[-1]
+    except Exception:
+        return "total_revenue"
+
+
+def guess_trends_col(file_path):
+    """Guesses the trends column of an uploaded CSV to pre-fill the UI."""
+    if not file_path:
+        return "Ad Opportunities"
+    try:
+        df = read_csv_robust(file_path, nrows=0)
+        for col in df.columns:
+            if col.lower() in COLUMN_NAME_HINTS["trends"]:
+                return col
+        return df.columns[-1]
+    except Exception:
+        return "Ad Opportunities"
+
+
+def guess_kpi_col(file_path, user_kpi):
+    """Guesses the KPI column of an uploaded CSV to pre-fill the UI."""
+    if not file_path:
+        return user_kpi
+    try:
+        df = read_csv_robust(file_path, nrows=0)
+        if user_kpi in df.columns:
+            return user_kpi
+        for col in df.columns:
+            if col.lower() in COLUMN_NAME_HINTS["kpi"]:
+                return col
+        return df.columns[1] if len(df.columns) > 1 else df.columns[0]
+    except Exception:
+        return user_kpi
+
+
 def load_and_prepare_data(config):
     """
     Loads and prepares the KPI, investment, and trends data based on the config.

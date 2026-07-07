@@ -13,6 +13,11 @@ from data_preprocessor import (
     robust_numeric_parsing,
     read_csv_robust,
     load_and_prepare_data,
+    guess_date_col,
+    guess_channel_col,
+    guess_investment_col,
+    guess_trends_col,
+    guess_kpi_col,
 )
 
 
@@ -363,3 +368,52 @@ def test_load_and_prepare_data_uppercases_other_channel(tmp_path):
     _, daily_investment_df, _, _ = load_and_prepare_data(config)
 
     assert daily_investment_df["Product Group"].tolist() == ["OTHER", "OTHER"]
+
+
+def test_guess_kpi_col_handles_tab_delimited_file(tmp_path):
+    """Reproduces a real bug: the Streamlit upload form guessed default
+    column names with a plain pd.read_csv (comma-only), so a tab-delimited
+    performance file collapsed to a single column whose name was the whole
+    raw header line, which then failed resolve_column downstream. The
+    guess_* helpers must use read_csv_robust so they detect the real
+    delimiter, just like the actual data-loading path does.
+    """
+    path = _write_csv(tmp_path / "performance.csv", "Data\tVendas via lead\n2025-01-01\t10\n")
+
+    assert guess_date_col(path) == "Data"
+    assert guess_kpi_col(path, "Sessions") == "Vendas via lead"
+
+
+def test_guess_investment_col_handles_semicolon_delimited_file(tmp_path):
+    path = _write_csv(
+        tmp_path / "investment.csv", "Data;Canal;Valor\n2025-01-01;Google;100\n"
+    )
+
+    assert guess_date_col(path) == "Data"
+    assert guess_channel_col(path) == "Canal"
+    assert guess_investment_col(path) == "Valor"
+
+
+def test_guess_trends_col_handles_semicolon_delimited_file(tmp_path):
+    path = _write_csv(
+        tmp_path / "trends.csv", "Day;Ad Opportunities\n2025-01-01;5\n"
+    )
+
+    assert guess_date_col(path) == "Day"
+    assert guess_trends_col(path) == "Ad Opportunities"
+
+
+def test_guess_kpi_col_prefers_exact_user_configured_name(tmp_path):
+    path = _write_csv(
+        tmp_path / "performance.csv", "date,Sessions,Conversions\n2025-01-01,10,2\n"
+    )
+
+    assert guess_kpi_col(path, "Conversions") == "Conversions"
+
+
+def test_guess_helpers_return_defaults_on_empty_or_missing_path():
+    assert guess_date_col("") == "date"
+    assert guess_channel_col("") == "product_group"
+    assert guess_investment_col("") == "total_revenue"
+    assert guess_trends_col("") == "Ad Opportunities"
+    assert guess_kpi_col("", "Sessions") == "Sessions"

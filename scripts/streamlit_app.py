@@ -347,7 +347,14 @@ from dashboard_charts import (
     find_saturation_point,
     compute_incremental_cpa,
 )
-from data_preprocessor import COLUMN_NAME_HINTS
+from data_preprocessor import (
+    COLUMN_NAME_HINTS,
+    guess_date_col,
+    guess_channel_col,
+    guess_investment_col,
+    guess_trends_col,
+    guess_kpi_col,
+)
 
 import base64
 
@@ -867,79 +874,15 @@ with tab1:
                     with open(trends_path, "wb") as f:
                         f.write(trends_file.getbuffer())
 
-                import pandas as pd
+                inv_date = guess_date_col(inv_path)
+                perf_date = guess_date_col(perf_path)
+                trends_date = guess_date_col(trends_path) if trends_path else "Day"
 
-                def get_date_col(file_path):
-                    if not file_path:
-                        return "date"
-                    try:
-                        df = pd.read_csv(file_path, nrows=0)
-                        for col in df.columns:
-                            if col.lower() in COLUMN_NAME_HINTS["date"]:
-                                return col
-                        return df.columns[0]
-                    except:
-                        return "date"
-
-                def get_channel_col(file_path):
-                    if not file_path:
-                        return "product_group"
-                    try:
-                        df = pd.read_csv(file_path, nrows=0)
-                        for col in df.columns:
-                            if col.lower() in COLUMN_NAME_HINTS["channel"]:
-                                return col
-                        return df.columns[0]
-                    except:
-                        return "product_group"
-
-                def get_investment_col(file_path):
-                    if not file_path:
-                        return "total_revenue"
-                    try:
-                        df = pd.read_csv(file_path, nrows=0)
-                        for col in df.columns:
-                            if col.lower() in COLUMN_NAME_HINTS["investment"]:
-                                return col
-                        return df.columns[-1]
-                    except:
-                        return "total_revenue"
-
-                def get_trends_col(file_path):
-                    if not file_path:
-                        return "Ad Opportunities"
-                    try:
-                        df = pd.read_csv(file_path, nrows=0)
-                        for col in df.columns:
-                            if col.lower() in COLUMN_NAME_HINTS["trends"]:
-                                return col
-                        return df.columns[-1]
-                    except:
-                        return "Ad Opportunities"
-
-                def get_kpi_col(file_path, user_kpi):
-                    if not file_path:
-                        return user_kpi
-                    try:
-                        df = pd.read_csv(file_path, nrows=0)
-                        if user_kpi in df.columns:
-                            return user_kpi
-                        for col in df.columns:
-                            if col.lower() in COLUMN_NAME_HINTS["kpi"]:
-                                return col
-                        return df.columns[1] if len(df.columns) > 1 else df.columns[0]
-                    except:
-                        return user_kpi
-
-                inv_date = get_date_col(inv_path)
-                perf_date = get_date_col(perf_path)
-                trends_date = get_date_col(trends_path) if trends_path else "Day"
-
-                inv_channel = get_channel_col(inv_path)
-                inv_investment = get_investment_col(inv_path)
-                perf_kpi = get_kpi_col(perf_path, kpi_column)
+                inv_channel = guess_channel_col(inv_path)
+                inv_investment = guess_investment_col(inv_path)
+                perf_kpi = guess_kpi_col(perf_path, kpi_column)
                 trends_col = (
-                    get_trends_col(trends_path) if trends_path else "Ad Opportunities"
+                    guess_trends_col(trends_path) if trends_path else "Ad Opportunities"
                 )
 
                 dynamic_config = {
