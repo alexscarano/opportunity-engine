@@ -266,7 +266,30 @@ def test_load_and_prepare_data_raises_clear_error_on_empty_result(tmp_path):
         "treat_outliers": False,
     }
 
-    with pytest.raises(Exception, match="investment"):
+    with pytest.raises(Exception, match="arquivo de investimento"):
+        load_and_prepare_data(config)
+
+
+def test_load_and_prepare_data_raises_clear_error_on_empty_kpi_result(tmp_path):
+    investment_path = _write_csv(
+        tmp_path / "investment.csv",
+        "dates,product_group,total_revenue\n2025-01-01,GOOGLE,100\n",
+    )
+    performance_path = _write_csv(
+        tmp_path / "performance.csv", "date,kpi\nnot-a-date,10\n"
+    )
+    config = {
+        "investment_file_path": investment_path,
+        "performance_file_path": performance_path,
+        "performance_kpi_column": "kpi",
+        "date_formats": {
+            "investment_file": "%Y-%m-%d",
+            "performance_file": "%Y-%m-%d",
+        },
+        "treat_outliers": False,
+    }
+
+    with pytest.raises(Exception, match="arquivo de performance"):
         load_and_prepare_data(config)
 
 
@@ -295,3 +318,34 @@ def test_load_and_prepare_data_resolves_mismatched_column_name(tmp_path):
     _, daily_investment_df, _, _ = load_and_prepare_data(config)
 
     assert daily_investment_df["investment"].tolist() == [100.0, 200.0]
+
+
+def test_load_and_prepare_data_uppercases_other_channel(tmp_path):
+    """Pins the Product Group uppercase invariant that saturation_curve.py and
+    streamlit_app.py rely on to exclude the 'OTHER' channel (case-sensitive
+    `!= "OTHER"` comparisons) — a lowercase/mixed-case 'other' in the source
+    CSV must come out as 'OTHER', not slip through unnormalized.
+    """
+    investment_path = _write_csv(
+        tmp_path / "investment.csv",
+        "dates,product_group,total_revenue\n"
+        "2025-01-01,other,100\n"
+        "2025-01-02,Other,200\n",
+    )
+    performance_path = _write_csv(
+        tmp_path / "performance.csv", "date,kpi\n2025-01-01,10\n2025-01-02,20\n"
+    )
+    config = {
+        "investment_file_path": investment_path,
+        "performance_file_path": performance_path,
+        "performance_kpi_column": "kpi",
+        "date_formats": {
+            "investment_file": "%Y-%m-%d",
+            "performance_file": "%Y-%m-%d",
+        },
+        "treat_outliers": False,
+    }
+
+    _, daily_investment_df, _, _ = load_and_prepare_data(config)
+
+    assert daily_investment_df["Product Group"].tolist() == ["OTHER", "OTHER"]
