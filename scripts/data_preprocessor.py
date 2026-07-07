@@ -3,6 +3,7 @@
 This module handles all data loading, validation, cleaning, and pre-processing.
 """
 
+import csv
 import pandas as pd
 import numpy as np
 
@@ -67,6 +68,77 @@ def robust_date_parsing(series, date_format=None):
     except Exception as e:
         print(f"   - ERROR: Date parsing failed completely: {e}")
         return pd.to_datetime(series, errors="coerce")
+
+
+COLUMN_NAME_HINTS = {
+    "date": ["date", "dates", "data", "day", "dia"],
+    "channel": [
+        "channel",
+        "product_group",
+        "product",
+        "media",
+        "source",
+        "campaign",
+        "canal",
+        "grupo",
+    ],
+    "investment": [
+        "investment",
+        "spend",
+        "cost",
+        "investimento",
+        "revenue",
+        "total_revenue",
+        "valor",
+    ],
+    "trends": [
+        "searches",
+        "trends",
+        "opportunities",
+        "ad opportunities",
+        "volume",
+        "generic searches",
+    ],
+    "kpi": ["kpi", "sessions", "conversions", "revenue", "conversoes", "cliques", "clicks"],
+}
+
+
+def resolve_column(df, configured_name, hint_key, description):
+    """
+    Resolves a configured column name against a dataframe's actual columns.
+    Tries exact match, then whitespace/case-insensitive match, then a
+    common-name fallback (only when exactly one candidate matches). Raises
+    ValueError with an actionable message if nothing resolves cleanly.
+    """
+    if configured_name in df.columns:
+        return configured_name
+
+    normalized = {col.strip().lower(): col for col in df.columns}
+    tolerant_match = normalized.get(configured_name.strip().lower())
+    if tolerant_match is not None:
+        return tolerant_match
+
+    hints = COLUMN_NAME_HINTS.get(hint_key, [])
+    candidates = [col for col in df.columns if col.strip().lower() in hints]
+    if len(candidates) == 1:
+        print(
+            f"   - AVISO: Coluna configurada '{configured_name}' ({description}) não encontrada. "
+            f"Usando '{candidates[0]}' (detectada automaticamente pelo nome)."
+        )
+        return candidates[0]
+
+    available = list(df.columns)
+    if len(candidates) > 1:
+        raise ValueError(
+            f"Coluna configurada '{configured_name}' ({description}) não encontrada, e mais de uma "
+            f"coluna parece corresponder: {candidates}. Ajuste 'column_mapping' no config para "
+            f"desambiguar. Colunas disponíveis: {available}"
+        )
+
+    raise ValueError(
+        f"Coluna configurada '{configured_name}' ({description}) não encontrada. "
+        f"Colunas disponíveis no arquivo: {available}"
+    )
 
 
 def load_and_prepare_data(config):
