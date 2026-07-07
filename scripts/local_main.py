@@ -60,11 +60,16 @@ def main(config, args):
         )
 
         # --- New Code: Load performance data for additional covariates ---
-        performance_df = pd.read_csv(
+        performance_df = data_preprocessor.read_csv_robust(
             config["performance_file_path"], on_bad_lines="skip"
         )
         perf_map = config.get("column_mapping", {}).get("performance_file", {})
-        date_col = perf_map.get("date_col", "date")
+        date_col = data_preprocessor.resolve_column(
+            performance_df,
+            perf_map.get("date_col", "date"),
+            "date",
+            "coluna de data do arquivo de performance (covariáveis)",
+        )
         performance_df.rename(columns={date_col: "Date"}, inplace=True)
         # --- End New Code ---
 
