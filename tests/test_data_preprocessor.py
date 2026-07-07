@@ -128,6 +128,20 @@ def test_robust_numeric_parsing_null_tokens_become_nan():
     assert result.iloc[2] == 100.5
 
 
+def test_robust_numeric_parsing_real_nan_cells_become_nan():
+    """A column read from a CSV with genuinely empty cells (e.g. a blank
+    trailing field) contains actual missing values, not the string "-" or
+    "N/A" tested above. On pandas' 'str' dtype, `.astype(str)` does NOT
+    stringify these missing values to "nan" the way legacy 'object' dtype
+    does — they survive as bare floats and must still be handled.
+    """
+    s = pd.Series(["63.115,13", None, "34.816,26"])
+    result = robust_numeric_parsing(s)
+    assert result.isna().tolist() == [False, True, False]
+    assert result.iloc[0] == 63115.13
+    assert result.iloc[2] == 34816.26
+
+
 def test_robust_numeric_parsing_plain_integers_no_ambiguity_warning(capsys):
     s = pd.Series(["2122", "3438", "2317"])
     result = robust_numeric_parsing(s)

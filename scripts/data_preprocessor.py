@@ -204,7 +204,10 @@ def robust_numeric_parsing(series, column_name="valor"):
     if pd.api.types.is_numeric_dtype(series):
         return series
 
-    text = series.astype(str).str.strip()
+    # fillna before astype: on pandas' 'str' dtype, astype(str) alone leaves
+    # missing values as bare float NaN instead of stringifying them, which
+    # breaks the string ops below. "" is already a recognized null token.
+    text = series.fillna("").astype(str).str.strip()
     is_null_token = text.str.lower().isin(_NULL_TOKENS)
 
     is_paren_negative = text.str.match(r"^\(.*\)$", na=False)
@@ -322,12 +325,22 @@ def load_and_prepare_data(config):
                 print(
                     "   - WARNING: Generic trends file not found. Continuing without trends data."
                 )
-                trends_df = pd.DataFrame(columns=["Date", "Generic Searches"])
+                trends_df = pd.DataFrame(
+                    {
+                        "Date": pd.Series(dtype="datetime64[ns]"),
+                        "Generic Searches": pd.Series(dtype="float64"),
+                    }
+                )
         else:
             print(
                 "   - INFO: No generic trends file path provided. Continuing without trends data."
             )
-            trends_df = pd.DataFrame(columns=["Date", "Generic Searches"])
+            trends_df = pd.DataFrame(
+                {
+                    "Date": pd.Series(dtype="datetime64[ns]"),
+                    "Generic Searches": pd.Series(dtype="float64"),
+                }
+            )
 
         # --- Dynamically Rename Columns ---
         user_kpi_col = config.get("performance_kpi_column", "Sessions")
