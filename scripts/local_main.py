@@ -686,3 +686,14 @@ if __name__ == "__main__":
             exit(1)
 
         main(config, args)
+
+    # ponytail: google-generativeai leaves a non-daemon gRPC thread running,
+    # so the interpreter hangs after all work (and the log) is done instead
+    # of exiting. The Streamlit UI reads our stdout pipe waiting for EOF, so
+    # a hung process here means the parent looks frozen forever even though
+    # every output file was already written. Force-exit once real work and
+    # logging are complete; raise the process-count ceiling to a proper
+    # gRPC channel close if genai ever needs cleanup before exit.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
