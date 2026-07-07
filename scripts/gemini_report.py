@@ -41,6 +41,9 @@ def _generate_full_report_narrative(
     """
     Generates the entire report narrative with a single, comprehensive prompt.
     """
+    if gemini_client is None:
+        raise ValueError("Gemini client is not authenticated (API key missing or invalid).")
+
     print("   - Generating full strategic narrative with Gemini...")
 
     # --- 1. Prepare all data for the prompt ---
@@ -495,6 +498,9 @@ def generate_global_gemini_report(
     """
     Generates a dedicated Gemini report for the global saturation analysis.
     """
+    if gemini_client is None:
+        raise ValueError("Gemini client is not authenticated (API key missing or invalid).")
+
     print("\n" + "=" * 50 + "\nGenerating Global Gemini Report...\n" + "=" * 50)
 
     advertiser_name = config.get("advertiser_name", "default_advertiser")
