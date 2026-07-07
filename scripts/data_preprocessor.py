@@ -141,6 +141,105 @@ def resolve_column(df, configured_name, hint_key, description):
     )
 
 
+_NULL_TOKENS = {"", "-", "n/a", "na", "null", "none", "nan"}
+
+
+def _digit_group_vote(value):
+    """
+    Votes 'us' (comma=thousands, dot=decimal) or 'br' (dot=thousands,
+    comma=decimal) for a single numeric-looking string, or None if the
+    value gives no reliable signal on its own.
+    """
+    has_dot = "." in value
+    has_comma = "," in value
+
+    if has_dot and has_comma:
+        return "us" if value.rfind(".") > value.rfind(",") else "br"
+
+    if has_dot and value.count(".") > 1:
+        return "br"  # repeated separator can only be a thousands grouping
+    if has_comma and value.count(",") > 1:
+        return "us"
+
+    if has_dot and value.count(".") == 1:
+        trailing = len(value) - value.rindex(".") - 1
+        return "us" if trailing in (1, 2) else None
+    if has_comma and value.count(",") == 1:
+        trailing = len(value) - value.rindex(",") - 1
+        return "br" if trailing in (1, 2) else None
+
+    return None
+
+
+def _detect_number_format(values):
+    """
+    Decides 'us' or 'br' for a whole column by majority vote across
+    unambiguous per-value signals. Values with no separator at all give no
+    signal and don't affect the decision. Returns (format, confident).
+    """
+    with_separator = [v for v in values if ("." in v or "," in v)]
+    if not with_separator:
+        return "us", True  # nothing to disambiguate, format choice is a no-op
+
+    votes = {"us": 0, "br": 0}
+    for value in with_separator:
+        vote = _digit_group_vote(value)
+        if vote is not None:
+            votes[vote] += 1
+
+    if votes["br"] > votes["us"]:
+        return "br", True
+    if votes["us"] > votes["br"]:
+        return "us", True
+    return "us", False  # tie (including no unambiguous signal at all)
+
+
+def robust_numeric_parsing(series, column_name="valor"):
+    """
+    Converts a possibly-messy string series to numeric. Auto-detects BR
+    (1.234,56) vs US (1,234.56) locale per column, strips currency
+    symbols/percent signs, handles accounting-style negatives ((1.234,56)),
+    and treats common null tokens as missing instead of parse failures.
+    """
+    if pd.api.types.is_numeric_dtype(series):
+        return series
+
+    text = series.astype(str).str.strip()
+    is_null_token = text.str.lower().isin(_NULL_TOKENS)
+
+    is_paren_negative = text.str.match(r"^\(.*\)$", na=False)
+    cleaned = text.str.replace(r"^\((.*)\)$", r"\1", regex=True)
+    cleaned = cleaned.str.replace(r"[^\d,.\-]", "", regex=True)
+
+    non_null_values = cleaned[~is_null_token & (cleaned != "")]
+    number_format, confident = _detect_number_format(non_null_values.tolist())
+    if not confident and len(non_null_values) > 0:
+        examples = non_null_values.unique()[:5].tolist()
+        print(
+            f"   - AVISO: Formato numérico da coluna '{column_name}' ambíguo, assumindo padrão "
+            f"US (',' milhar / '.' decimal). Exemplos: {examples}"
+        )
+
+    if number_format == "br":
+        cleaned = cleaned.str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
+    else:
+        cleaned = cleaned.str.replace(",", "", regex=False)
+
+    cleaned = cleaned.where(~is_null_token, None)
+    result = pd.to_numeric(cleaned, errors="coerce")
+    result = result.where(~is_paren_negative, -result)
+
+    failed = result.isna() & ~is_null_token & text.notna()
+    if failed.sum() > 0:
+        examples = series[failed].unique()[:5].tolist()
+        print(
+            f"   - AVISO: {int(failed.sum())} valor(es) da coluna '{column_name}' não puderam ser "
+            f"convertidos para número. Exemplos: {examples}"
+        )
+
+    return result
+
+
 def load_and_prepare_data(config):
     """
     Loads and prepares the KPI, investment, and trends data based on the config.
