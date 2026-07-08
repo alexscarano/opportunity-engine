@@ -122,18 +122,29 @@ def hill_transform(spend, k, s):
 
 def predict_clipped_kpi(organic_baseline_mean, mkt_model, mkt_scaler, mkt_features):
     """
-    Predicts KPI from Hill-transformed marketing features, clipping the scaled
-    features to [0, 1] before feeding the linear model.
+    Predicts KPI from Hill-transformed marketing features, flooring the scaled
+    features at 0 before feeding the linear model.
 
-    Simulated spend outside the historically observed range (e.g. investment=0,
-    or several multiples of the historical average) extrapolates `mkt_scaler`
-    beyond the range it was fit on -- MinMaxScaler does not clip, so this can
-    produce a negative scaled feature which, combined with the model's
-    non-negative coefficients, predicts a KPI below the organic baseline
-    (even negative). Clipping keeps the simulation within the physically
-    sensible 0%-100%-of-historical-saturation range.
+    Simulated spend below the historically observed range (e.g. investment=0)
+    extrapolates `mkt_scaler` below the range it was fit on -- MinMaxScaler
+    does not clip, so this can produce a negative scaled feature which,
+    combined with the model's non-negative coefficients, predicts a KPI below
+    the organic baseline (even negative). Flooring at 0 fixes that.
+
+    The upper bound is intentionally left unclipped: `mkt_features` is already
+    a Hill-transform output, which asymptotically bounds itself to [0, 1) for
+    any finite spend -- it never actually reaches 1. Simulating spend above
+    the historical max (the whole point of scanning "how far could we scale")
+    legitimately produces a scaled feature above 1 when the channel's true
+    saturation point sits beyond what was ever spent historically; that is
+    real signal, still finite (bounded by the Hill asymptote), not runaway
+    extrapolation. Clipping it to exactly 1 used to erase all remaining
+    marginal gain the instant one simulated point crossed the historical max,
+    turning smooth diminishing returns into a hard, one-step wall to zero --
+    see docs/superpowers/plans/2026-07-06-dashboard-inconsistencies-fix-design.md
+    and the 2026-07-08 follow-up investigation.
     """
-    scaled_features = np.clip(mkt_scaler.transform([mkt_features]), 0.0, 1.0)
+    scaled_features = np.clip(mkt_scaler.transform([mkt_features]), 0.0, None)
     return organic_baseline_mean + mkt_model.predict(scaled_features)[0]
 
 

@@ -147,6 +147,17 @@ class TestPredictClippedKpi(unittest.TestCase):
         predicted = predict_clipped_kpi(500.0, FakeModel(), FakeScaler(), [150.0])
         self.assertEqual(predicted, 505.0)
 
+    def test_does_not_flatten_extrapolation_above_historical_max(self):
+        # Spend of 400 is well above the historical max (200) -> scales to 3.0.
+        # The Hill feature itself is still finite and below its own asymptote
+        # at this spend, so the upper bound must stay unclipped: two spend
+        # levels above the historical max should still predict different KPIs,
+        # not collapse to the same flat value.
+        predicted_300 = predict_clipped_kpi(500.0, FakeModel(), FakeScaler(), [300.0])
+        predicted_400 = predict_clipped_kpi(500.0, FakeModel(), FakeScaler(), [400.0])
+        self.assertNotEqual(predicted_300, predicted_400)
+        self.assertGreater(predicted_400, predicted_300)
+
 
 if __name__ == "__main__":
     unittest.main()
