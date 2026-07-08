@@ -1105,7 +1105,8 @@ with tab2:
         with open(st.session_state["active_config_path"], "r", encoding="utf-8") as f:
             active_config = json.load(f)
         adv_name = active_config.get("advertiser_name", "default_advertiser")
-        adv_dir = os.path.join("outputs", adv_name)
+        output_base = active_config.get("output_directory", "outputs").rstrip("/").rstrip("\\")
+        adv_dir = os.path.join(output_base, adv_name)
 
         import glob
 
