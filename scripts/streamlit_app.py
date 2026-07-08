@@ -2133,21 +2133,50 @@ with tab3:
                 except Exception:
                     sat_metrics = {}
 
+                # Calculate baseline ROAS early for the conditional warning expander
+                baseline_roas_for_warning = (
+                    true_baseline_monthly_kpi / true_baseline_monthly_inv
+                    if true_baseline_monthly_inv > 0
+                    else None
+                )
+                implausible_roas_threshold = 20.0
+
+                # Render warning expanders sequentially below the title
                 if sat_metrics.get("low_confidence"):
-                    st.error(
-                        "⚠️ **Projeção de baixa confiança.** O modelo de marketing "
-                        f"explica apenas {sat_metrics.get('cv_r_squared', 0) * 100:.1f}% "
-                        "da variação fora da amostra (validação walk-forward), e a "
-                        "contribuição de mídia medida foi de "
-                        f"{sat_metrics.get('marketing_contribution_of_kpi_pct', 0):.1f}% "
-                        f"do {kpi_name}. Por isso **a recomendação de realocar "
-                        "orçamento entre canais foi desativada** — os números abaixo "
-                        "refletem só o efeito de gastar mais no **mesmo mix atual**, e "
-                        "devem ser lidos como direcionais, não como decisão de mix. "
-                        "Sinal fraco assim costuma vir de **escopo** (o KPI conta "
-                        "vendas de todos os canais, não só os pagos) ou de pouca "
-                        "variação de investimento no período analisado."
-                    )
+                    with st.expander("Alerta: Projeção de baixa confiança", expanded=False):
+                        st.markdown(
+                            "**Projeção de baixa confiança.** O modelo de marketing "
+                            f"explica apenas {sat_metrics.get('cv_r_squared', 0) * 100:.1f}% "
+                            "da variação fora da amostra (validação walk-forward), e a "
+                            "contribuição de mídia medida foi de "
+                            f"{sat_metrics.get('marketing_contribution_of_kpi_pct', 0):.1f}% "
+                            f"do {kpi_name}. Por isso **a recomendação de realocar "
+                            "orçamento entre canais foi desativada** — os números abaixo "
+                            "refletem só o efeito de gastar mais no **mesmo mix atual**, e "
+                            "devem ser lidos como direcionais, não como decisão de mix. "
+                            "Sinal fraco assim costuma vir de **escopo** (o KPI conta "
+                            "vendas de todos os canais, não só os pagos) ou de pouca "
+                            "variação de investimento no período analisado."
+                        )
+
+                if kpi_is_monetary and baseline_roas_for_warning and baseline_roas_for_warning > implausible_roas_threshold:
+                    with st.expander("Alerta: ROAS do Cenário Atual elevado", expanded=False):
+                        st.markdown(
+                            f"ROAS do Cenário Atual está em {baseline_roas_for_warning:.1f}x -- "
+                            "muito acima do que a maioria dos negócios reais alcança "
+                            "(tipicamente até 10-15x). Confira se 'O KPI já está em "
+                            f"R$' e o Ticket Médio (acima, em Parâmetros do Negócio) "
+                            f"realmente correspondem à coluna '{kpi_name}' do seu CSV "
+                            "antes de usar esses números para decisão.\n\n"
+                            "Se essas configurações já estiverem corretas, o problema "
+                            "mais provável é de **escopo**: o arquivo de investimento "
+                            "pode cobrir só uma fatia da mídia (ex: só estes canais "
+                            f"pagos), enquanto '{kpi_name}' pode estar contando vendas "
+                            "de todos os canais (orgânico, direto, etc.). Nesse caso "
+                            "nenhuma combinação de checkbox resolve -- é preciso um "
+                            "arquivo de investimento mais completo, ou isolar a métrica "
+                            "só do que esses canais realmente influenciam."
+                        )
 
                 cfg_avg_ticket = config.get("average_ticket", 0)
                 cfg_conv_rate = config.get("conversion_rate_from_kpi_to_bo", 0)
@@ -2241,28 +2270,7 @@ with tab3:
                         delta_color=iroas_delta_color,
                     )
 
-                    # Real-world ROAS rarely exceeds ~10-15x even for great campaigns;
-                    # a much higher number is more often a sign that "O KPI já está em
-                    # R$" and/or Ticket Médio don't actually match the source data than
-                    # a genuinely extraordinary business.
-                    implausible_roas_threshold = 20.0
-                    if baseline_roas and baseline_roas > implausible_roas_threshold:
-                        st.warning(
-                            f"ROAS do Cenário Atual está em {baseline_roas:.1f}x -- "
-                            "muito acima do que a maioria dos negócios reais alcança "
-                            "(tipicamente até 10-15x). Confira se 'O KPI já está em "
-                            f"R$' e o Ticket Médio (acima, em Parâmetros do Negócio) "
-                            f"realmente correspondem à coluna '{kpi_name}' do seu CSV "
-                            "antes de usar esses números para decisão.\n\n"
-                            "Se essas configurações já estiverem corretas, o problema "
-                            "mais provável é de **escopo**: o arquivo de investimento "
-                            "pode cobrir só uma fatia da mídia (ex: só estes canais "
-                            f"pagos), enquanto '{kpi_name}' pode estar contando vendas "
-                            "de todos os canais (orgânico, direto, etc.). Nesse caso "
-                            "nenhuma combinação de checkbox resolve -- é preciso um "
-                            "arquivo de investimento mais completo, ou isolar a métrica "
-                            "só do que esses canais realmente influenciam."
-                        )
+                    # Implausible ROAS check has been moved to the top expanders.
                 else:
                     cpa_val = (
                         optimal_point["CPA"]
