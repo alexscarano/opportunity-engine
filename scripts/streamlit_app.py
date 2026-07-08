@@ -1017,7 +1017,7 @@ with tab1:
                     "fecham negócio → use 20%. Multiplica direto a Receita e o ROI/ROAS de todos "
                     "os relatórios -- errar aqui infla ou reduz artificialmente o resultado "
                     "financeiro inteiro. Deixe 100% se o KPI já for a venda final. Ignorado se "
-                    "'O KPI já está em R$' acima estiver marcado.",
+                    "'O KPI já está em R\\$' acima estiver marcado.",
                 )
                 / 100.0
             )
@@ -1025,10 +1025,10 @@ with tab1:
                 "Ticket Médio (R$)",
                 value=100.0,
                 step=10.0,
-                help="Valor médio (R$) de cada venda/conversão. Receita = KPI × Taxa de Conversão "
+                help="Valor médio (R\\$) de cada venda/conversão. Receita = KPI × Taxa de Conversão "
                 "× Ticket Médio. Deixar este valor errado (ex: 1.00 sem ajustar) faz os "
-                "relatórios mostrarem 'R$' que na verdade são só a contagem bruta do KPI, não "
-                "dinheiro real. Ignorado se 'O KPI já está em R$' acima estiver marcado.",
+                "relatórios mostrarem 'R\\$' que na verdade são só a contagem bruta do KPI, não "
+                "dinheiro real. Ignorado se 'O KPI já está em R\\$' acima estiver marcado.",
             )
             if kpi_is_monetary:
                 # ponytail: KPI is already money, conversion_rate/avg_ticket must be a no-op
@@ -1160,7 +1160,7 @@ with tab1:
                 "ROAS Mínimo",
                 value=0.0,
                 help="Retorno mínimo aceitável por real investido (Receita ÷ Investimento). Ex: "
-                "2.5 = R$2,50 de volta pra cada R$1,00 investido. Níveis de investimento com ROAS "
+                "2.5 = R\\$2,50 de volta pra cada R\\$1,00 investido. Níveis de investimento com ROAS "
                 "abaixo deste valor ficam de fora da faixa considerada válida pra recomendar "
                 "verba. 0.00 = sem restrição. Só é usado quando o KPI é monetário ou o Objetivo "
                 "da Otimização é 'Receita'.",
@@ -1861,7 +1861,7 @@ with tab3:
                     value=roas_max * 0.5,
                     step=roas_step,
                     format="%.3f",
-                    help="Ex: 2.5 = R$2,50 de retorno pra cada R$1,00 investido, em média. Subir "
+                    help="Ex: 2.5 = R\\$2,50 de retorno pra cada R\\$1,00 investido, em média. Subir "
                     "este valor elimina os níveis de investimento mais altos primeiro (é onde o "
                     "retorno médio cai mais), puxando o Ponto Recomendado pra baixo.",
                 )
@@ -2355,7 +2355,7 @@ with tab3:
                 st.markdown(
                     "Mostra a alocação recomendada entre canais (Modelo de Elasticidade) — uma "
                     "proporção fixa — em reais por canal, conforme o orçamento total escala. As "
-                    "porcentagens permanecem constantes; o que muda é o valor em R$ que cada canal "
+                    "porcentagens permanecem constantes; o que muda é o valor em R\\$ que cada canal "
                     "recebe a cada nível de investimento total."
                 )
                 st.plotly_chart(
