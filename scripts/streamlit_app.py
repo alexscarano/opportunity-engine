@@ -575,6 +575,9 @@ from db import (
     get_session,
 )
 from streamlit_cookies_controller import CookieController
+import importlib
+import dashboard_charts
+importlib.reload(dashboard_charts)
 from dashboard_charts import (
     build_icpa_curve,
     build_revenue_roi_curve,
