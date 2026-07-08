@@ -2117,6 +2117,21 @@ with tab3:
 
                 st.markdown("---")
                 st.markdown("### Métricas da Estratégia Ótima")
+
+                cfg_avg_ticket = config.get("average_ticket", 0)
+                cfg_conv_rate = config.get("conversion_rate_from_kpi_to_bo", 0)
+                if kpi_is_monetary:
+                    st.caption(
+                        f"Premissas usadas: KPI já é R$ (Ticket Médio e Taxa de "
+                        f"Conversão ignorados) · Receita = {kpi_name} × 1,0"
+                    )
+                else:
+                    st.caption(
+                        f"Premissas usadas: KPI não é R$ · Ticket Médio = R$ "
+                        f"{cfg_avg_ticket:,.2f} · Taxa de Conversão = {cfg_conv_rate:.1%} "
+                        f"· Receita = {kpi_name} × Taxa de Conversão × Ticket Médio"
+                    )
+
                 col1, col2, col3, col4 = st.columns(4)
 
                 inv_val = optimal_point["Monthly_Investment"]
@@ -2194,6 +2209,21 @@ with tab3:
                         delta=iroas_delta,
                         delta_color=iroas_delta_color,
                     )
+
+                    # Real-world ROAS rarely exceeds ~10-15x even for great campaigns;
+                    # a much higher number is more often a sign that "O KPI já está em
+                    # R$" and/or Ticket Médio don't actually match the source data than
+                    # a genuinely extraordinary business.
+                    implausible_roas_threshold = 20.0
+                    if baseline_roas and baseline_roas > implausible_roas_threshold:
+                        st.warning(
+                            f"ROAS do Cenário Atual está em {baseline_roas:.1f}x -- "
+                            "muito acima do que a maioria dos negócios reais alcança "
+                            "(tipicamente até 10-15x). Confira se 'O KPI já está em "
+                            f"R$' e o Ticket Médio (acima, em Parâmetros do Negócio) "
+                            f"realmente correspondem à coluna '{kpi_name}' do seu CSV "
+                            "antes de usar esses números para decisão."
+                        )
                 else:
                     cpa_val = (
                         optimal_point["CPA"]
