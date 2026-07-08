@@ -390,56 +390,24 @@ def run_mmm_engine(config):
 
     total_marketing_contribution = sum(contributions.values())
 
-    # Universal Data-Driven Fallback for extreme noise
-    # Configurable minimum marketing contribution (default 5%)
+    # Honest low-signal warning (replaces the old "fabricate a minimum attribution"
+    # fallback). When the fitted contribution is a small fraction of the KPI, the
+    # model genuinely found little measurable marketing effect -- previously the
+    # code overrode the coefficients to force a >=5% attribution and lowered the
+    # baseline to match, manufacturing a marketing signal from noise with no flag
+    # to the user. We now let the honest (possibly small) number flow through and
+    # just warn, so the downstream ROAS/mix numbers reflect what was actually
+    # measured instead of a floor invented by the tool.
     min_marketing_pct = config.get("min_marketing_contribution", 0.05)
-    min_required_contribution = y_total.sum() * min_marketing_pct
-
-    if total_marketing_contribution < min_required_contribution:
-        print(
-            f"   - ℹ️ Noise detected. Applying dynamic fallback to preserve minimum {min_marketing_pct * 100}% attribution."
-        )
-
-        # Override parameters to sensible defaults because fitted ones are likely noise step-functions
-        for i, col in enumerate(active_spend_cols):
-            final_alphas[i] = 0.5
-            final_ks[i] = 1.0
-            final_ss[i] = df[col].mean() if df[col].mean() > 0 else 1.0
-
-        # Re-transform with sensible parameters
-        for i, col in enumerate(active_spend_cols):
-            adstocked_spend = geometric_adstock(df[col].values, final_alphas[i])
-            saturated_spend = hill_transform(adstocked_spend, final_ks[i], final_ss[i])
-            transformed_mkt[col] = saturated_spend
-
-        X_mkt_scaled = mkt_scaler.fit_transform(transformed_mkt)
-
-        # Scale model coefficients proportionally to spend share to reflect the fallback contribution realistically
-        total_spend = df[active_spend_cols].sum().sum()
-        for i, col in enumerate(active_spend_cols):
-            spend_share = (
-                df[col].sum() / total_spend
-                if total_spend > 0
-                else 1.0 / len(active_spend_cols)
+    if y_total.sum() > 0:
+        measured_pct = total_marketing_contribution / y_total.sum()
+        if measured_pct < min_marketing_pct:
+            print(
+                f"   - ⚠️ Sinal de marketing fraco: contribuicao medida "
+                f"{measured_pct * 100:.1f}% do KPI (abaixo de {min_marketing_pct * 100:.0f}%). "
+                "Os numeros de ROAS/mix abaixo tem baixa confianca -- o modelo "
+                "encontrou pouco efeito de midia mensuravel neste periodo."
             )
-            sum_X = X_mkt_scaled[:, i].sum()
-            if sum_X > 0:
-                mkt_model.coef_[i] = (min_required_contribution * spend_share) / sum_X
-            else:
-                mkt_model.coef_[i] = 0.0
-
-        # Adjust organic baseline downwards so the total sum matches
-        delta = min_required_contribution - total_marketing_contribution
-        df["kpi_organic_baseline"] = df["kpi_organic_baseline"] - (delta / len(df))
-
-        # Recompute contributions
-        contributions = {
-            col: (mkt_model.coef_[i] * X_mkt_scaled[:, i]).sum()
-            for i, col in enumerate(active_spend_cols)
-        }
-        for col in inactive_spend_cols:
-            contributions[col] = 0.0
-        total_marketing_contribution = sum(contributions.values())
 
     if total_marketing_contribution > 0:
         contribution_pct = {
