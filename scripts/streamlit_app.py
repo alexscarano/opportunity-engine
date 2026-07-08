@@ -1492,7 +1492,7 @@ with tab2:
                         f"""
                         <div class="insight-box" style="margin-bottom: 25px;">
                             <h3 style="margin-top: 0; color: #1a73e8;">Veredito Executivo</h3>
-                            <p style="font-size: 1.1rem; font-weight: 500; line-height: 1.6; margin: 0;">{verdict}</p>
+                            <p style="font-size: 1.1rem; font-weight: 500; line-height: 1.6; margin: 0;">{verdict.replace(r'\$', '$')}</p>
                         </div>
                         """,
                         unsafe_allow_html=True,

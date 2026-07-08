@@ -269,7 +269,7 @@ class TestBuildSessionsBarChart(unittest.TestCase):
         fig = build_sessions_bar_chart(sessions_bar_df, kpi_name="Cliques")
         self.assertEqual(list(fig.data[0].x), ["Cliques Previsto", "Cliques Real"])
         self.assertEqual(list(fig.data[0].y), [100, 150])
-        self.assertEqual(list(fig.data[0].marker.color), ["red", "royalblue"])
+        self.assertEqual(list(fig.data[0].marker.color), ["red", "#2ca02c"])
 
 
 class TestBuildResponseCurveIndividual(unittest.TestCase):

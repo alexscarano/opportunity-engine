@@ -354,7 +354,7 @@ def build_accuracy_chart(accuracy_df, kpi_name="kpi"):
             y=accuracy_df["kpi"],
             mode="lines",
             name=f"{kpi_name} Real",
-            line=dict(color="royalblue", width=2),
+            line=dict(color="#2ca02c", width=2),
         )
     )
     fig.add_trace(
@@ -401,7 +401,7 @@ def build_causal_line_chart(line_df, kpi_name="kpi"):
             y=line_df["Actual_KPI"],
             mode="lines",
             name=f"{kpi_name} Real",
-            line=dict(color="royalblue", width=2),
+            line=dict(color="#2ca02c", width=2),
         )
     )
     fig.add_trace(
@@ -465,7 +465,7 @@ def build_sessions_bar_chart(sessions_bar_df, kpi_name="kpi"):
         "Actual": f"{kpi_name} Real",
     }
     x_labels = [labels.get(idx, idx) for idx in sessions_bar_df.index]
-    colors = ["red" if idx == "Forecasted" else "royalblue" for idx in sessions_bar_df.index]
+    colors = ["red" if idx == "Forecasted" else "#2ca02c" for idx in sessions_bar_df.index]
 
     fig = go.Figure(
         go.Bar(
