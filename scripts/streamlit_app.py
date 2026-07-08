@@ -73,6 +73,18 @@ def get_available_gemini_models(gemini_key):
     return preferred_order, MODELS_INFO
 
 
+def escape_markdown_dollars(obj):
+    """Recursively escapes all dollar signs in strings to prevent Streamlit LaTeX rendering bugs."""
+    import re
+    if isinstance(obj, str):
+        return re.sub(r'(?<!\\)\$', r'\\$', obj)
+    elif isinstance(obj, dict):
+        return {k: escape_markdown_dollars(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [escape_markdown_dollars(x) for x in obj]
+    return obj
+
+
 def _load_event_narrative(selected_dir):
     """Loads the narrative dict and metrics from JSON, parses HTML fallback, or parses Markdown fallback."""
     import glob
@@ -119,7 +131,7 @@ def _load_event_narrative(selected_dir):
                     res["value_delivered"].update(data["value_delivered"])
                 if "metrics" in data and isinstance(data["metrics"], dict):
                     res["metrics"].update(data["metrics"])
-                return res
+                return escape_markdown_dollars(res)
         except Exception as e:
             print(f"Error loading JSON narrative: {e}")
 
@@ -229,7 +241,7 @@ def _load_event_narrative(selected_dir):
                 except ValueError:
                     pass
 
-            return res
+            return escape_markdown_dollars(res)
         except Exception as e:
             print(f"Error parsing HTML narrative: {e}")
 
@@ -283,7 +295,7 @@ def _load_event_narrative(selected_dir):
                 res["metrics"]["efficiency_label"] = m_eff.group(1).strip()
                 res["metrics"]["efficiency_value"] = m_eff.group(2).strip()
 
-            return res
+            return escape_markdown_dollars(res)
         except Exception as e:
             print(f"Error parsing Markdown narrative: {e}")
 
