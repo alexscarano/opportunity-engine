@@ -73,6 +73,223 @@ def get_available_gemini_models(gemini_key):
     return preferred_order, MODELS_INFO
 
 
+def _load_event_narrative(selected_dir):
+    """Loads the narrative dict and metrics from JSON, parses HTML fallback, or parses Markdown fallback."""
+    import glob
+    import json
+    import re
+
+    # Initialize default structure
+    res = {
+        "report_title": "Análise de Impacto Causal",
+        "executive_verdict": "",
+        "detailed_analysis": "",
+        "value_delivered": {
+            "narrative": "",
+            "methodology_narrative": ""
+        },
+        "next_steps": [],
+        "metrics": {
+            "incremental_investment": "N/D",
+            "incremental_investment_str": "N/D",
+            "business_impact_label": "KPI",
+            "business_impact_value": "N/D",
+            "efficiency_label": "Eficiência",
+            "efficiency_value": "N/D",
+            "r_squared": 0.0,
+            "p_value": 0.0,
+            "mape": 0.0,
+            "mae": 0.0,
+            "avg_ticket": 0.0,
+            "conversion_rate": 0.0,
+            "p_value_threshold": 0.05
+        }
+    }
+
+    # 1. Check for JSON narrative
+    json_files = glob.glob(os.path.join(selected_dir, "gemini_report_*.json"))
+    json_files = [f for f in json_files if "global_report" not in f]
+    if json_files:
+        try:
+            with open(json_files[0], "r", encoding="utf-8") as f:
+                data = json.load(f)
+                res.update(data)
+                # Ensure nested dicts and default keys are populated
+                if "value_delivered" in data and isinstance(data["value_delivered"], dict):
+                    res["value_delivered"].update(data["value_delivered"])
+                if "metrics" in data and isinstance(data["metrics"], dict):
+                    res["metrics"].update(data["metrics"])
+                return res
+        except Exception as e:
+            print(f"Error loading JSON narrative: {e}")
+
+    # 2. Check for HTML narrative fallback
+    html_files = glob.glob(os.path.join(selected_dir, "gemini_report_*.html"))
+    html_files = [f for f in html_files if "global_report" not in f]
+    if html_files:
+        try:
+            with open(html_files[0], "r", encoding="utf-8") as f:
+                html_content = f.read()
+
+            title_match = re.search(r"<title>(.*?)</title>", html_content)
+            if title_match:
+                res["report_title"] = title_match.group(1).strip()
+            
+            verdict_match = re.search(r'Veredito Executivo</h2>\s*<p[^>]*>(.*?)</p>', html_content, re.DOTALL)
+            if verdict_match:
+                res["executive_verdict"] = verdict_match.group(1).strip()
+            
+            analysis_match = re.search(r'Análise Aprofundada e Eficiência</h2>\s*<p[^>]*>(.*?)</p>', html_content, re.DOTALL)
+            if analysis_match:
+                res["detailed_analysis"] = analysis_match.group(1).strip()
+            
+            value_match = re.search(r'O Impacto Causal e Metodologia</h2>\s*<p[^>]*>(.*?)</p>', html_content, re.DOTALL)
+            if value_match:
+                res["value_delivered"]["narrative"] = value_match.group(1).strip()
+            
+            methodology_match = re.search(r'A Metodologia Opcional</h3>\s*<p[^>]*>(.*?)</p>', html_content, re.DOTALL)
+            if methodology_match:
+                res["value_delivered"]["methodology_narrative"] = methodology_match.group(1).strip()
+            
+            next_steps = []
+            next_steps_section = re.search(r'Próximos Passos Estratégicos</h2>\s*<ul>(.*?)</ul>', html_content, re.DOTALL)
+            if next_steps_section:
+                items = re.findall(r'<li>(.*?)</li>', next_steps_section.group(1))
+                for item in items:
+                    step_match = re.search(r'<strong>(.*?):</strong>(.*)', item)
+                    if step_match:
+                        next_steps.append({
+                            "step": step_match.group(1).strip(),
+                            "description": step_match.group(2).strip()
+                        })
+                    else:
+                        next_steps.append({
+                            "step": "Recomendação",
+                            "description": item.strip()
+                        })
+            res["next_steps"] = next_steps
+
+            # Parse metrics from HTML lists
+            m_inv = re.search(r'<li><strong>Investimento Incremental:</strong>\s*(.*?)</li>', html_content)
+            if m_inv:
+                res["metrics"]["incremental_investment_str"] = m_inv.group(1).strip()
+                res["metrics"]["incremental_investment"] = m_inv.group(1).strip()
+            
+            m_lift = re.search(r'<li><strong>Lift Mensurável \((.*?)\):</strong>\s*(.*?)</li>', html_content)
+            if m_lift:
+                res["metrics"]["business_impact_label"] = m_lift.group(1).strip()
+                res["metrics"]["business_impact_value"] = m_lift.group(2).strip()
+            
+            m_eff = re.search(r'<li><strong>(ROI Incremental|CPA Incremental):</strong>\s*(.*?)</li>', html_content)
+            if m_eff:
+                res["metrics"]["efficiency_label"] = m_eff.group(1).strip()
+                res["metrics"]["efficiency_value"] = m_eff.group(2).strip()
+
+            # Robust numeric pattern: handles negatives, decimals, scientific notation
+            _NUM_RE = r'-?[\d]+(?:\.[\d]+)?(?:[eE][-+]?\d+)?'
+
+            # Parse validation metrics — each isolated so one failure doesn't kill the rest
+            r2_m = re.search(r'<li><strong>R-squared \(R²\):</strong>\s*(' + _NUM_RE + r')', html_content)
+            if r2_m:
+                try:
+                    res["metrics"]["r_squared"] = float(r2_m.group(1))
+                except ValueError:
+                    pass
+            p_val_m = re.search(r'<li><strong>P-value \(Significância do Lift\):</strong>\s*(' + _NUM_RE + r')', html_content)
+            if p_val_m:
+                try:
+                    res["metrics"]["p_value"] = float(p_val_m.group(1))
+                except ValueError:
+                    pass
+            mape_m = re.search(r'<li><strong>Mean Absolute Percentage Error \(MAPE\):</strong>\s*(' + _NUM_RE + r')%', html_content)
+            if mape_m:
+                try:
+                    res["metrics"]["mape"] = float(mape_m.group(1))
+                except ValueError:
+                    pass
+
+            # Parse assumptions
+            ticket_m = re.search(r'<li><strong>Valor Médio por Venda \(Ticket Médio\):</strong>\s*(.*?)</li>', html_content)
+            if ticket_m:
+                try:
+                    clean_t = re.sub(r'[^\d,\.]', '', ticket_m.group(1)).replace('.', '').replace(',', '.')
+                    res["metrics"]["avg_ticket"] = float(clean_t)
+                except (ValueError, AttributeError):
+                    pass
+            conv_m = re.search(r'<li><strong>Taxa de Conversão \(de KPI para Venda\):</strong>\s*(' + _NUM_RE + r')', html_content)
+            if conv_m:
+                try:
+                    res["metrics"]["conversion_rate"] = float(conv_m.group(1))
+                except ValueError:
+                    pass
+            p_thresh_m = re.search(r'<li><strong>Limiar de Significância Estatística \(p-value\):</strong>\s*(' + _NUM_RE + r')', html_content)
+            if p_thresh_m:
+                try:
+                    res["metrics"]["p_value_threshold"] = float(p_thresh_m.group(1))
+                except ValueError:
+                    pass
+
+            return res
+        except Exception as e:
+            print(f"Error parsing HTML narrative: {e}")
+
+    # 3. Check for Markdown narrative fallback
+    md_path = os.path.join(selected_dir, "RECOMMENDATIONS.md")
+    if os.path.exists(md_path):
+        try:
+            with open(md_path, "r", encoding="utf-8") as f:
+                md_content = f.read()
+
+            title_match = re.search(r"^#\s+(.*)", md_content)
+            if title_match:
+                res["report_title"] = title_match.group(1).strip()
+
+            verdict_match = re.search(r"## Veredito Executivo\s*\n\s*\*\*(.*?)\*\*", md_content, re.DOTALL)
+            if verdict_match:
+                res["executive_verdict"] = verdict_match.group(1).strip()
+
+            analysis_match = re.search(r"## Análise Aprofundada\s*\n\s*(.*?)\n\s*(?:##|$)", md_content, re.DOTALL)
+            if analysis_match:
+                res["detailed_analysis"] = analysis_match.group(1).strip()
+
+            value_match = re.search(r"## O Impacto Causal e Valor Entregue\s*\n\s*(.*?)\n\s*(?:##|$)", md_content, re.DOTALL)
+            if value_match:
+                res["value_delivered"]["narrative"] = value_match.group(1).strip()
+
+            next_steps = []
+            next_steps_section = re.search(r"## Próximos Passos Estratégicos\s*\n\s*(.*)", md_content, re.DOTALL)
+            if next_steps_section:
+                items = re.findall(r"###\s+(.*?)\n\s*(.*?)(?=\n\s*(?:###|##|$))", next_steps_section.group(1), re.DOTALL)
+                for step_title, step_desc in items:
+                    next_steps.append({
+                        "step": step_title.strip(),
+                        "description": step_desc.strip()
+                    })
+            res["next_steps"] = next_steps
+
+            # Parse metrics from markdown
+            m_inv = re.search(r'-\s+\*\*Investimento Incremental:\*\*\s*(.*)', md_content)
+            if m_inv:
+                res["metrics"]["incremental_investment_str"] = m_inv.group(1).strip()
+                res["metrics"]["incremental_investment"] = m_inv.group(1).strip()
+            
+            m_lift = re.search(r'-\s+\*\*(Receita Incremental|Pedidos Incrementais):\*\*\s*(.*)', md_content)
+            if m_lift:
+                res["metrics"]["business_impact_label"] = m_lift.group(1).strip()
+                res["metrics"]["business_impact_value"] = m_lift.group(2).strip()
+                
+            m_eff = re.search(r'-\s+\*\*(ROI Incremental|CPA Incremental):\*\*\s*(.*)', md_content)
+            if m_eff:
+                res["metrics"]["efficiency_label"] = m_eff.group(1).strip()
+                res["metrics"]["efficiency_value"] = m_eff.group(2).strip()
+
+            return res
+        except Exception as e:
+            print(f"Error parsing Markdown narrative: {e}")
+
+    return None
+
+
 PREMIUM_CSS = """
 <style>
     /* Default / Light mode styles */
@@ -754,6 +971,10 @@ with tab1:
                 "Modelo do Gemini",
                 options=model_options,
                 format_func=lambda x: models_info.get(x, x),
+                help="Gera só o texto narrativo dos relatórios (o 'Veredito Executivo' e as "
+                "recomendações em português) -- não muda nenhum número, gráfico ou cálculo. "
+                "Modelos 'Pro' escrevem análises mais elaboradas e são mais lentos/caros; "
+                "'Flash' é mais rápido e mais barato.",
             )
 
             st.divider()
@@ -776,6 +997,10 @@ with tab1:
                     "Maximizar Volume de Conversões (Leads, Vendas, etc.)",
                     "Maximizar Receita / Faturamento (Revenue)",
                 ],
+                help="Define o que a aba Elasticidade tenta maximizar ao recomendar como dividir "
+                "a verba entre canais. 'Volume' busca o maior número de conversões; 'Receita' usa "
+                "o Ticket Médio para buscar o maior faturamento. Também decide se o dashboard "
+                "mostra CPA/iCPA (custo por conversão) ou ROAS/iROAS (retorno por real investido).",
             )
             optimization_target = (
                 "CONVERSIONS"
@@ -788,7 +1013,11 @@ with tab1:
                     "Taxa de Conversão do KPI (%)",
                     value=1.0,
                     step=0.1,
-                    help="Deixe 100% se o KPI já for a venda final.",
+                    help="Percentual do KPI que de fato vira venda. Ex: KPI = 'Leads' e 20% deles "
+                    "fecham negócio → use 20%. Multiplica direto a Receita e o ROI/ROAS de todos "
+                    "os relatórios -- errar aqui infla ou reduz artificialmente o resultado "
+                    "financeiro inteiro. Deixe 100% se o KPI já for a venda final. Ignorado se "
+                    "'O KPI já está em R$' acima estiver marcado.",
                 )
                 / 100.0
             )
@@ -796,6 +1025,10 @@ with tab1:
                 "Ticket Médio (R$)",
                 value=100.0,
                 step=10.0,
+                help="Valor médio (R$) de cada venda/conversão. Receita = KPI × Taxa de Conversão "
+                "× Ticket Médio. Deixar este valor errado (ex: 1.00 sem ajustar) faz os "
+                "relatórios mostrarem 'R$' que na verdade são só a contagem bruta do KPI, não "
+                "dinheiro real. Ignorado se 'O KPI já está em R$' acima estiver marcado.",
             )
             if kpi_is_monetary:
                 # ponytail: KPI is already money, conversion_rate/avg_ticket must be a no-op
@@ -808,7 +1041,11 @@ with tab1:
                     min_value=7,
                     max_value=90,
                     value=14,
-                    help="Dias mínimos de histórico necessários antes do evento (padrão: 14, reduzido de 30).",
+                    help="Dias de histórico exigidos antes do evento pra treinar o modelo causal "
+                    "(padrão: 14, reduzido de 30). Menos dias deixa mais eventos serem analisados, "
+                    "mas com um modelo mais instável e um R² menos confiável; mais dias analisa "
+                    "menos eventos, só os que têm histórico suficiente, mas com estimativas mais "
+                    "robustas.",
                 )
                 r_squared_threshold = st.slider(
                     "Ajuste Mínimo do Modelo (R²)",
@@ -816,7 +1053,11 @@ with tab1:
                     max_value=1.0,
                     value=0.30,
                     step=0.05,
-                    help="Qualidade mínima de ajuste do modelo (padrão: 0.3, reduzido de 0.5/0.6).",
+                    help="Nota de qualidade do modelo causal: 1.0 = previsão perfeita, 0 = tão bom "
+                    "quanto chutar a média histórica, negativo = pior que chutar a média (sinal de "
+                    "que a estimativa de impacto não é confiável). Só é aplicado se 'Exigir Ajuste "
+                    "Mínimo do Modelo' abaixo estiver marcado. Subir o valor rejeita mais eventos "
+                    "como 'não confiáveis'; descer aceita eventos com previsões mais fracas.",
                 )
                 p_value_threshold = st.slider(
                     "Significância Máxima (p-value)",
@@ -824,36 +1065,67 @@ with tab1:
                     max_value=0.5,
                     value=0.10,
                     step=0.01,
-                    help="Limite máximo para aceitar o impacto como estatisticamente significante.",
+                    help="Um evento só passa se a chance de o resultado ser coincidência (ruído) "
+                    "for menor que este valor. Só é aplicado se 'Exigir Significância Estatística' "
+                    "abaixo estiver marcado. Valores maiores (ex: 0.10) deixam passar mais eventos, "
+                    "inclusive alguns menos confiáveis; valores menores (ex: 0.01) são mais "
+                    "rigorosos e aprovam menos eventos.",
                 )
                 increase_threshold_percent = st.number_input(
                     "Var. Mínima de Aumento de Investimento (%)",
                     min_value=1,
                     max_value=100,
                     value=20,
-                    help="Aumento de investimento semanal vs média das 12 semanas anteriores para detectar evento.",
+                    help="Quanto o investimento semanal precisa subir (vs. média das 12 semanas "
+                    "anteriores) pra ser detectado como um 'pico' a analisar. Valor baixo encontra "
+                    "mais eventos candidatos, inclusive picos pequenos/ruído; valor alto só "
+                    "detecta aumentos bem grandes de verba.",
                 )
                 decrease_threshold_percent = st.number_input(
                     "Var. Mínima de Queda de Investimento (%)",
                     min_value=1,
                     max_value=100,
                     value=10,
-                    help="Queda de investimento semanal vs média das 12 semanas anteriores para detectar evento.",
+                    help="Mesma lógica do campo acima, mas pra quedas de investimento: quanto a "
+                    "verba semanal precisa cair (vs. média das 12 semanas anteriores) pra virar um "
+                    "evento de 'corte de verba' a analisar.",
                 )
                 require_statistical_significance = st.checkbox(
                     "Exigir Significância Estatística (p-value)",
                     value=True,
-                    help="Se marcado, exige significância estatística (p-value < limite).",
+                    help="Se marcado, descarta eventos cujo resultado pode ser só coincidência "
+                    "(p-value acima do limite definido acima). Desmarcar deixa passar eventos sem "
+                    "nenhuma confiança estatística -- útil só pra explorar dados com pouco "
+                    "histórico, não recomendado pra decisões reais de verba.",
                 )
                 require_logical_direction = st.checkbox(
                     "Exigir Direção Lógica do Impacto",
                     value=True,
-                    help="Se marcado, exige que o investimento e o resultado variem na mesma direção.",
+                    help="Se marcado, descarta eventos em que investimento e resultado andaram em "
+                    "direções opostas (ex: a verba caiu, mas o relatório atribui um 'ganho' a "
+                    "ela) -- esses casos são estatisticamente incoerentes. Desmarcar pode gerar "
+                    "relatórios com Investimento Incremental negativo e receita incremental "
+                    "positiva ao mesmo tempo, o que é confuso e não deve virar recomendação de "
+                    "negócio.",
                 )
                 require_model_fit = st.checkbox(
                     "Exigir Ajuste Mínimo do Modelo (R²)",
                     value=True,
-                    help="Se marcado, exige que a precisão (R²) do modelo seja maior ou igual ao limite.",
+                    help="Se marcado, descarta eventos cujo modelo causal tem ajuste (R²) abaixo "
+                    "do limite definido acima -- ou seja, a previsão de 'o que teria acontecido "
+                    "sem o evento' não é confiável o bastante pra calcular a diferença. Desmarcar "
+                    "permite que eventos com modelo ruim (R² negativo, pior que chutar a média) "
+                    "ainda apareçam no relatório como se tivessem sido validados.",
+                )
+                investment_limit_factor = st.slider(
+                    "Limite de Investimento Simulado (Elasticidade)",
+                    min_value=1.5,
+                    max_value=5.0,
+                    value=1.5,
+                    step=0.5,
+                    help="Até quantas vezes o gasto médio atual a curva de resposta (aba Elasticidade) "
+                    "é simulada. Se o 'Cenário de Saturação' sempre empatar com o 'Ponto Recomendado', "
+                    "aumente este limite -- o teto real pode estar além do que 1.5x consegue mostrar.",
                 )
 
         with col2:
@@ -879,12 +1151,19 @@ with tab1:
             target_cpa = st.number_input(
                 "CPA Máximo (R$)",
                 value=0.0,
-                help="0.00 = sem restrição.",
+                help="Custo máximo aceitável por conversão. Níveis de investimento na aba "
+                "Elasticidade que ultrapassem este CPA ficam de fora da faixa considerada válida "
+                "pra recomendar verba -- o 'Cenário Estratégico' nunca vai sugerir gastar tanto a "
+                "ponto de passar deste teto. 0.00 = sem restrição, considera qualquer nível.",
             )
             target_roas = st.number_input(
                 "ROAS Mínimo",
                 value=0.0,
-                help="Ex: 2.5 = R$2,50 por R$1,00 investido. 0.00 = sem restrição.",
+                help="Retorno mínimo aceitável por real investido (Receita ÷ Investimento). Ex: "
+                "2.5 = R$2,50 de volta pra cada R$1,00 investido. Níveis de investimento com ROAS "
+                "abaixo deste valor ficam de fora da faixa considerada válida pra recomendar "
+                "verba. 0.00 = sem restrição. Só é usado quando o KPI é monetário ou o Objetivo "
+                "da Otimização é 'Receita'.",
             )
 
         col_btn1, col_btn2 = st.columns(2)
@@ -971,7 +1250,7 @@ with tab1:
                         "target_iroas": 0,
                     },
                     "optimization_target": optimization_target,
-                    "investment_limit_factor": 1.5,
+                    "investment_limit_factor": investment_limit_factor,
                     "p_value_threshold": p_value_threshold,
                     "r_squared_threshold": r_squared_threshold,
                     "increase_threshold_percent": increase_threshold_percent,
@@ -1166,44 +1445,8 @@ with tab2:
             )
             selected_dir = report_options[selected_report_name]
 
-            html_in_dir = glob.glob(os.path.join(selected_dir, "gemini_report_*.html"))
-            html_in_dir = [r for r in html_in_dir if "global_report.html" not in r]
-
-            if html_in_dir:
-                with open(html_in_dir[0], "r", encoding="utf-8") as f:
-                    html_content = f.read()
-                import streamlit.components.v1 as components
-
-                components.html(html_content, height=800, scrolling=True)
-            else:
-                md_path = os.path.join(selected_dir, "RECOMMENDATIONS.md")
-                if os.path.exists(md_path):
-                    with open(md_path, "r", encoding="utf-8") as f:
-                        md_content = f.read()
-                    st.markdown(md_content)
-
-                    st.markdown("---")
-                    st.markdown("### Gráficos da Análise")
-                    png_files = glob.glob(os.path.join(selected_dir, "*.png"))
-                    if png_files:
-                        for png_file in sorted(png_files):
-                            filename = os.path.basename(png_file).lower()
-                            if "accuracy" in filename:
-                                caption = "Acurácia do Modelo Pré-Intervenção (Predict vs Actual)"
-                            elif "sessions" in filename or "kpi" in filename:
-                                caption = "Efeito Causal no KPI"
-                            elif "investment" in filename or "cost" in filename:
-                                caption = "Pico de Investimento (Intervenção)"
-                            elif "line_chart" in filename:
-                                caption = "Gráfico Resumo (Impacto Causal)"
-                            else:
-                                caption = "Gráfico da Análise"
-
-                            st.image(
-                                png_file, caption=caption, use_container_width=True
-                            )
-                else:
-                    st.warning("Nenhum relatório encontrado para este evento.")
+            # Load narrative dict
+            narrative = _load_event_narrative(selected_dir)
 
             csv_names = [
                 "line_chart_data.csv",
@@ -1211,39 +1454,161 @@ with tab2:
                 "investment_data.csv",
                 "sessions_data.csv",
             ]
-            if all(os.path.exists(os.path.join(selected_dir, f)) for f in csv_names):
-                st.markdown("### Gráficos Interativos")
+            has_csvs = all(os.path.exists(os.path.join(selected_dir, f)) for f in csv_names)
+
+            if narrative:
+                # 1. Report Title
+                st.markdown(f"## {narrative.get('report_title', 'Análise de Impacto Causal')}")
+
+                # 2. Executive Verdict
+                verdict = narrative.get("executive_verdict", "")
+                if verdict:
+                    st.markdown(
+                        f"""
+                        <div class="insight-box" style="margin-bottom: 25px;">
+                            <h3 style="margin-top: 0; color: #1a73e8;">Veredito Executivo</h3>
+                            <p style="font-size: 1.1rem; font-weight: 500; line-height: 1.6; margin: 0;">{verdict}</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
+                # 3. Metrics
+                metrics = narrative.get("metrics", {})
+                if metrics:
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Investimento Incremental", metrics.get("incremental_investment_str", "N/D"))
+                    with col2:
+                        st.metric(f"Lift ({metrics.get('business_impact_label', 'KPI')})", metrics.get("business_impact_value", "N/D"))
+                    with col3:
+                        st.metric(metrics.get("efficiency_label", "Eficiência"), metrics.get("efficiency_value", "N/D"))
+
+                # 4. Detailed Analysis
+                detailed_analysis = narrative.get("detailed_analysis", "")
+                if detailed_analysis:
+                    st.markdown("---")
+                    st.subheader("Análise Aprofundada e Eficiência")
+                    st.write(detailed_analysis)
+
+                # 5. Causal Impact & Methodology
+                value_delivered = narrative.get("value_delivered", {})
+                value_narrative = value_delivered.get("narrative", "") if isinstance(value_delivered, dict) else ""
+                methodology_narrative = value_delivered.get("methodology_narrative", "") if isinstance(value_delivered, dict) else ""
+
+                if value_narrative:
+                    st.markdown("---")
+                    st.subheader("O Impacto Causal e Metodologia")
+                    st.write(value_narrative)
+
                 kpi_name = active_config.get("primary_business_metric_name", "kpi")
 
-                line_chart_df = pd.read_csv(os.path.join(selected_dir, "line_chart_data.csv"))
-                st.plotly_chart(
-                    build_causal_line_chart(line_chart_df, kpi_name=kpi_name),
-                    use_container_width=True,
-                )
+                # Causal Line Chart
+                if has_csvs:
+                    line_chart_df = pd.read_csv(os.path.join(selected_dir, "line_chart_data.csv"))
+                    st.plotly_chart(
+                        build_causal_line_chart(line_chart_df, kpi_name=kpi_name),
+                        use_container_width=True,
+                    )
+                else:
+                    # Fallback to PNG line chart
+                    png_line_charts = glob.glob(os.path.join(selected_dir, "*line_chart*.png"))
+                    if png_line_charts:
+                        st.image(png_line_charts[0], caption="Gráfico Resumo (Impacto Causal)", use_container_width=True)
 
-                accuracy_chart_df = pd.read_csv(os.path.join(selected_dir, "accuracy_data.csv"))
-                st.plotly_chart(
-                    build_accuracy_chart(accuracy_chart_df, kpi_name=kpi_name),
-                    use_container_width=True,
-                )
+                # Bar charts
+                if has_csvs:
+                    col1, col2 = st.columns(2)
+                    investment_chart_df = pd.read_csv(
+                        os.path.join(selected_dir, "investment_data.csv"), index_col=0
+                    )
+                    sessions_chart_df = pd.read_csv(
+                        os.path.join(selected_dir, "sessions_data.csv"), index_col=0
+                    )
+                    with col1:
+                        st.plotly_chart(
+                            build_investment_bar_chart(investment_chart_df),
+                            use_container_width=True,
+                        )
+                    with col2:
+                        st.plotly_chart(
+                            build_sessions_bar_chart(sessions_chart_df, kpi_name=kpi_name),
+                            use_container_width=True,
+                        )
+                else:
+                    # Fallback to PNG bar charts
+                    png_inv = glob.glob(os.path.join(selected_dir, "*investment*.png")) + glob.glob(os.path.join(selected_dir, "*cost*.png"))
+                    png_sess = glob.glob(os.path.join(selected_dir, "*sessions*.png")) + glob.glob(os.path.join(selected_dir, "*kpi*.png"))
+                    
+                    if png_inv or png_sess:
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if png_inv:
+                                st.image(png_inv[0], caption="Pico de Investimento (Intervenção)", use_container_width=True)
+                        with col2:
+                            if png_sess:
+                                st.image(png_sess[0], caption="Efeito Causal no KPI", use_container_width=True)
 
-                col1, col2 = st.columns(2)
-                investment_chart_df = pd.read_csv(
-                    os.path.join(selected_dir, "investment_data.csv"), index_col=0
-                )
-                sessions_chart_df = pd.read_csv(
-                    os.path.join(selected_dir, "sessions_data.csv"), index_col=0
-                )
+                if methodology_narrative:
+                    st.write(methodology_narrative)
+
+                # 6. Next steps
+                next_steps = narrative.get("next_steps", [])
+                if next_steps:
+                    st.markdown("---")
+                    st.subheader("Próximos Passos Estratégicos")
+                    for step in next_steps:
+                        if isinstance(step, dict):
+                            st.markdown(f"- **{step.get('step', '')}:** {step.get('description', '')}")
+                        else:
+                            st.markdown(f"- {step}")
+
+                # 7. Model Validation Appendix
+                r_squared = metrics.get("r_squared", 0.0)
+                p_value = metrics.get("p_value", 0.0)
+                mape = metrics.get("mape", 0.0)
+                
+                st.markdown("---")
+                st.subheader("Apêndice: Validação do Modelo Estatístico")
+                st.write("A validade desta análise baseia-se na capacidade do modelo de prever com precisão o desempenho durante o período pré-evento. As métricas abaixo demonstram a robustez e a confiabilidade do modelo:")
+
+                col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.plotly_chart(
-                        build_investment_bar_chart(investment_chart_df),
-                        use_container_width=True,
-                    )
+                    st.metric("R-squared (R²)", f"{r_squared:.2f}", help="Indica a variância explicada pelo modelo")
                 with col2:
+                    st.metric("P-value", f"{p_value:.4f}", help="Significância estatística do lift")
+                with col3:
+                    st.metric("MAPE", f"{mape:.2f}%" if isinstance(mape, (int, float)) else str(mape), help="Erro percentual médio absoluto no período pré-evento")
+
+                # Accuracy chart
+                if has_csvs:
+                    accuracy_chart_df = pd.read_csv(os.path.join(selected_dir, "accuracy_data.csv"))
                     st.plotly_chart(
-                        build_sessions_bar_chart(sessions_chart_df, kpi_name=kpi_name),
+                        build_accuracy_chart(accuracy_chart_df, kpi_name=kpi_name),
                         use_container_width=True,
                     )
+                else:
+                    # Fallback to PNG accuracy plot
+                    png_acc = glob.glob(os.path.join(selected_dir, "*accuracy*.png"))
+                    if png_acc:
+                        st.image(png_acc[0], caption="Acurácia do Modelo Pré-Intervenção", use_container_width=True)
+
+                # 8. Assumptions Appendix
+                avg_ticket = metrics.get("avg_ticket", 0.0)
+                conversion_rate = metrics.get("conversion_rate", 0.0)
+                p_value_threshold = metrics.get("p_value_threshold", 0.05)
+                
+                st.markdown("---")
+                st.subheader("Apêndice: Premissas da Análise")
+                st.markdown(
+                    f"""
+                    - **Valor Médio por Venda (Ticket Médio):** R$ {avg_ticket:,.2f}
+                    - **Taxa de Conversão (de KPI para Venda):** {conversion_rate:.4%}
+                    - **Limiar de Significância Estatística (p-value):** {p_value_threshold}
+                    """
+                )
+            else:
+                st.warning("Nenhum relatório encontrado para este evento.")
 
         else:
             st.info(
@@ -1375,8 +1740,13 @@ with tab3:
             df["CPA"] = df["Daily_Investment"] / df["Projected_Total_KPIs"]
             df["CPA"] = df["CPA"].replace([np.inf, -np.inf], float("nan"))
 
-            df["iCPA"] = df["Incremental_Investment"] / df["Incremental_KPI"]
-            df["iCPA"] = df["iCPA"].replace([np.inf, -np.inf], float("nan")).fillna(0)
+            # compute_incremental_cpa (not a raw ratio + fillna(0)): points below
+            # baseline have Incremental_Investment clipped to 0 upstream, so a raw
+            # ratio reads as a literal "R$0.00 marginal cost" instead of N/A --
+            # exactly the bug already fixed for the scenario table below.
+            df["iCPA"] = compute_incremental_cpa(
+                df["Incremental_Investment"], df["Incremental_KPI"]
+            )
 
             if "Projected_Revenue" in df.columns:
                 df["ROAS"] = (df["Projected_Revenue"] / df["Monthly_Investment"]).replace([np.inf, -np.inf], float("nan"))
@@ -1390,13 +1760,20 @@ with tab3:
 
             st.sidebar.header("Filtros de Limitação")
             st.sidebar.markdown(
-                "Use estes limites para encontrar o ponto ótimo na curva."
+                "Cada filtro marcado abaixo remove pontos da curva de investimento simulada que "
+                "não atendem ao critério. O **Ponto Recomendado** é sempre o ponto de **maior "
+                "investimento** entre os que sobram -- filtros mais soltos (ou desmarcados) "
+                "tendem a recomendar mais verba; filtros mais apertados recomendam menos."
             )
 
             max_inv_val = float(df["Monthly_Investment"].max())
             min_inv_val = float(df["Monthly_Investment"].min())
 
             # --- Orçamento ---
+            st.sidebar.caption(
+                "Faixa de investimento mensal considerada. Sempre ativo -- estreitar esta faixa "
+                "é a forma mais direta de forçar um Ponto Recomendado maior ou menor."
+            )
             budget_col1, budget_col2 = st.sidebar.columns(2)
             min_budget_millions = budget_col1.number_input(
                 "Orçamento Mín. (M)",
@@ -1419,7 +1796,10 @@ with tab3:
 
             # --- CPA ---
             use_cpa_target = st.sidebar.checkbox(
-                "Aplicar Limite de Target CPA", value=False
+                "Aplicar Limite de Target CPA",
+                value=False,
+                help="Descarta pontos da curva cujo custo por conversão (CPA = Investimento ÷ "
+                "KPI) ultrapasse o valor abaixo. Usado quando o KPI não é monetário.",
             )
             target_cpa = None
             if use_cpa_target:
@@ -1433,11 +1813,18 @@ with tab3:
                     value=max_cpa_val * 0.5,
                     step=1.0,
                     format="%.2f",
+                    help="Custo máximo aceitável por conversão. Diminuir este valor elimina os "
+                    "níveis de investimento mais altos da curva primeiro (são os que custam mais "
+                    "por conversão), puxando o Ponto Recomendado pra baixo.",
                 )
 
             # --- iCPA ---
             use_icpa_target = st.sidebar.checkbox(
-                "Aplicar Limite de iCPA Marginal", value=False
+                "Aplicar Limite de iCPA Marginal",
+                value=False,
+                help="Descarta pontos onde o custo do PRÓXIMO real investido (iCPA, não o custo "
+                "médio) ultrapassa o valor abaixo -- mais rigoroso que o CPA médio, pois pega "
+                "onde a curva já está cara de escalar mesmo com CPA médio ainda razoável.",
             )
             target_icpa = None
             if use_icpa_target:
@@ -1451,10 +1838,16 @@ with tab3:
                     value=max_icpa_val * 0.5,
                     step=1.0,
                     format="%.2f",
+                    help="Custo marginal máximo aceitável pra continuar escalando o investimento.",
                 )
 
             # --- ROAS ---
-            use_roas = st.sidebar.checkbox("Aplicar ROAS Mínimo", value=False)
+            use_roas = st.sidebar.checkbox(
+                "Aplicar ROAS Mínimo",
+                value=False,
+                help="Descarta pontos cujo retorno médio (Receita ÷ Investimento) fique abaixo "
+                "do valor abaixo. Usado quando o KPI é monetário ou o Objetivo é 'Receita'.",
+            )
             min_roas = None
             if use_roas and "ROAS" in df.columns:
                 roas_max = float(df["ROAS"].replace([np.inf, -np.inf], np.nan).dropna().max())
@@ -1468,10 +1861,18 @@ with tab3:
                     value=roas_max * 0.5,
                     step=roas_step,
                     format="%.3f",
+                    help="Ex: 2.5 = R$2,50 de retorno pra cada R$1,00 investido, em média. Subir "
+                    "este valor elimina os níveis de investimento mais altos primeiro (é onde o "
+                    "retorno médio cai mais), puxando o Ponto Recomendado pra baixo.",
                 )
 
             # --- iROAS ---
-            use_iroas = st.sidebar.checkbox("Aplicar iROAS Mínimo", value=False)
+            use_iroas = st.sidebar.checkbox(
+                "Aplicar iROAS Mínimo",
+                value=False,
+                help="Descarta pontos onde o retorno do PRÓXIMO real investido (iROAS, não a "
+                "média) fica abaixo do valor abaixo -- mais rigoroso que o ROAS médio.",
+            )
             min_iroas = None
             if use_iroas and "iROAS" in df.columns:
                 iroas_max = float(df["iROAS"].replace([np.inf, -np.inf], np.nan).dropna().max())
@@ -1485,10 +1886,18 @@ with tab3:
                     value=iroas_max * 0.5,
                     step=iroas_step,
                     format="%.3f",
+                    help="Retorno marginal mínimo aceitável pra continuar escalando o "
+                    "investimento.",
                 )
 
             # --- KPI Mínimo ---
-            use_min_kpi = st.sidebar.checkbox("Aplicar KPI Mínimo", value=False)
+            use_min_kpi = st.sidebar.checkbox(
+                "Aplicar KPI Mínimo",
+                value=False,
+                help=f"Descarta pontos que projetam menos de um certo volume mensal de "
+                f"{kpi_name}, independente do custo -- útil quando existe uma meta de volume "
+                "que precisa ser batida, não só de eficiência.",
+            )
             min_kpi_val = None
             if use_min_kpi:
                 kpi_max = float(df["Monthly_KPI"].max())
@@ -1503,7 +1912,12 @@ with tab3:
 
             # --- % Incrementalidade ---
             use_min_incrementality = st.sidebar.checkbox(
-                "Aplicar % de Incrementalidade Mínima", value=False
+                "Aplicar % de Incrementalidade Mínima",
+                value=False,
+                help="Descarta pontos onde uma fatia pequena demais do KPI projetado é "
+                "realmente incremental (isto é, atribuível ao investimento em si, e não à sua "
+                "baseline orgânica). Protege contra recomendar investimento alto num nível onde "
+                "a maior parte do resultado já aconteceria de qualquer forma.",
             )
             min_incrementality_pct = None
             if use_min_incrementality:
@@ -1546,7 +1960,9 @@ with tab3:
             else:
                 optimal_point = filtered_df.iloc[-1]
 
-                saturation_point = find_saturation_point(df, optimal_point)
+                saturation_point = find_saturation_point(
+                    df, optimal_point, min_investment=baseline_monthly_inv / DAYS_IN_MONTH
+                )
 
                 st.markdown(f"### Resumo dos Cenários Projetados - {kpi_name}")
                 st.markdown(
@@ -1618,22 +2034,29 @@ with tab3:
                         return "N/A"
                     if val == 0:
                         return "R$ 0.00"
-                    if val >= 1_000_000:
-                        return f"R$ {val / 1_000_000:,.1f}M"
-                    if val >= 1_000:
-                        return f"R$ {val / 1_000:,.1f}k"
-                    return f"R$ {val:,.2f}"
+                    # Negative scenarios (e.g. a saturation point below baseline
+                    # spend) must still abbreviate -- format on the magnitude,
+                    # reapply the sign after.
+                    sign = "-" if val < 0 else ""
+                    abs_val = abs(val)
+                    if abs_val >= 1_000_000:
+                        return f"R$ {sign}{abs_val / 1_000_000:,.1f}M"
+                    if abs_val >= 1_000:
+                        return f"R$ {sign}{abs_val / 1_000:,.1f}k"
+                    return f"R$ {sign}{abs_val:,.2f}"
 
                 def format_number_kpi(val):
                     if pd.isna(val):
                         return "N/A"
                     if val == 0:
                         return "0.00"
-                    if val >= 1_000_000:
-                        return f"{val / 1_000_000:,.1f}M"
-                    if val >= 1000:
-                        return f"{val / 1000:,.1f}k"
-                    return f"{val:,.0f}"
+                    sign = "-" if val < 0 else ""
+                    abs_val = abs(val)
+                    if abs_val >= 1_000_000:
+                        return f"{sign}{abs_val / 1_000_000:,.1f}M"
+                    if abs_val >= 1000:
+                        return f"{sign}{abs_val / 1000:,.1f}k"
+                    return f"{sign}{abs_val:,.0f}"
 
                 def format_ratio(val):
                     if pd.isna(val):
@@ -1816,9 +2239,10 @@ with tab3:
                 inc_rev = optimal_point.get("Incremental_Revenue", 0.0) if hasattr(optimal_point, "get") else optimal_point["Incremental_Revenue"] if "Incremental_Revenue" in optimal_point.index else 0.0
                 inc_inv_daily = optimal_point["Incremental_Investment"] if "Incremental_Investment" in optimal_point.index else 0.0
                 if not pd.isna(inc_rev) and inc_rev > 0 and inc_inv_daily > 0:
-                    # ponytail: both Incremental_Revenue and Incremental_Investment are daily — ratio is valid as-is
-                    iroi = inc_rev / inc_inv_daily
-                    c4.metric("ROI Incremental", value=f"{iroi:.2f}x", delta="receita / investimento", delta_color="off")
+                    # True ROI (profit / investment), matching gemini_report.py's formula.
+                    # inc_rev / inc_inv_daily alone is ROAS, not ROI — off by exactly 1.0x.
+                    iroi = (inc_rev - inc_inv_daily) / inc_inv_daily
+                    c4.metric("ROI Incremental", value=f"{iroi:.2f}x", delta="(receita - investimento) / investimento", delta_color="off")
                 elif inc_kpi_val > 0 and inc_inv_val > 0:
                     efficiency = inc_kpi_val / (inc_inv_val / 1000)
                     c4.metric(f"{kpi_name} / R$1k", value=f"{efficiency:.1f}", delta="eficiência incremental", delta_color="off")
