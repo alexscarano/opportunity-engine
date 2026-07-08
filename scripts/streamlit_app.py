@@ -131,7 +131,12 @@ def _load_event_narrative(selected_dir):
                     res["value_delivered"].update(data["value_delivered"])
                 if "metrics" in data and isinstance(data["metrics"], dict):
                     res["metrics"].update(data["metrics"])
-                return escape_markdown_dollars(res)
+                # Metrics render via st.metric(), which shows text as-is (no
+                # markdown/LaTeX parsing) -- escaping them would print a
+                # literal backslash in front of every "R$" on screen.
+                escaped = escape_markdown_dollars(res)
+                escaped["metrics"] = res["metrics"]
+                return escaped
         except Exception as e:
             print(f"Error loading JSON narrative: {e}")
 
@@ -241,7 +246,11 @@ def _load_event_narrative(selected_dir):
                 except ValueError:
                     pass
 
-            return escape_markdown_dollars(res)
+            # Metrics render via st.metric() (no markdown/LaTeX parsing) --
+            # leave them unescaped, see the JSON-path comment above.
+            escaped = escape_markdown_dollars(res)
+            escaped["metrics"] = res["metrics"]
+            return escaped
         except Exception as e:
             print(f"Error parsing HTML narrative: {e}")
 
@@ -295,7 +304,11 @@ def _load_event_narrative(selected_dir):
                 res["metrics"]["efficiency_label"] = m_eff.group(1).strip()
                 res["metrics"]["efficiency_value"] = m_eff.group(2).strip()
 
-            return escape_markdown_dollars(res)
+            # Metrics render via st.metric() (no markdown/LaTeX parsing) --
+            # leave them unescaped, see the JSON-path comment above.
+            escaped = escape_markdown_dollars(res)
+            escaped["metrics"] = res["metrics"]
+            return escaped
         except Exception as e:
             print(f"Error parsing Markdown narrative: {e}")
 
