@@ -490,10 +490,15 @@ def run_mmm_engine(config):
         f"   - Total Marketing Contribution: {total_marketing_contribution:,.2f} ({(total_marketing_contribution / y_total.sum()) * 100:.2f}% of Total)"
     )
 
+    marketing_contribution_of_kpi_pct = (
+        (total_marketing_contribution / y_total.sum()) * 100 if y_total.sum() else 0.0
+    )
+
     return {
         "contribution_pct": contribution_pct,
         "r_squared": final_r2,
         "cv_r_squared": cv_r2,
+        "marketing_contribution_of_kpi_pct": marketing_contribution_of_kpi_pct,
         "model": mkt_model,
         "scaler": mkt_scaler,
         "optimal_params": {"alphas": final_alphas, "ks": final_ks, "ss": final_ss},
@@ -619,6 +624,25 @@ def generate_aggregated_response_curve(
     if not optimized_mix:
         optimized_mix = historical_mix
 
+    # When the marketing model has no out-of-sample signal (walk-forward CV R^2
+    # <= 0) we must NOT recommend moving budget between channels: the "optimal"
+    # reallocation is just the optimizer concentrating spend on whichever channel
+    # won the corner solution on noise. On a real project this dressed a CV R^2
+    # ~= 0 model up as a "+27% by reallocating" recommendation (42x iROAS). When
+    # untrusted, the strategic mix collapses to the historical mix, so the curve
+    # reflects only the effect of the total spend level, not a low-confidence
+    # channel reshuffle. cv_r_squared falls back to r_squared for older callers.
+    cv_r2 = elasticity_results.get(
+        "cv_r_squared", elasticity_results.get("r_squared", 0.0)
+    )
+    # Bar is a *meaningful* out-of-sample fit, not merely > 0. Near-zero CV R^2
+    # wobbles in the 0-0.05 range run to run (params sit on their bounds -- the
+    # channels aren't identified), and a ">0" test would flip the recommendation
+    # on and off on noise. Require the model to explain a real share of held-out
+    # variance before trusting it to move budget between channels.
+    min_cv_r2 = config.get("reallocation_min_cv_r2", 0.1)
+    trust_reallocation = cv_r2 >= min_cv_r2
+
     limit_factor = config.get("investment_limit_factor", 3.0)
     multipliers = np.linspace(0, limit_factor, 100)
 
@@ -658,6 +682,10 @@ def generate_aggregated_response_curve(
     def optimize_spend_mix_for_budget(total_budget, previous_optimal_mix=None):
         if total_budget <= 0:
             return {col: 0.0 for col in active_spend_cols}
+        if not trust_reallocation:
+            # Low-confidence model: keep the historical mix (see trust_reallocation
+            # note above) so no budget is reshuffled between channels on noise.
+            return dict(historical_mix)
 
         def objective(spend_array):
             mkt_features = []
@@ -950,6 +978,26 @@ def generate_aggregated_response_curve(
         csv_out_path = os.path.join(output_dir, "response_curve_data.csv")
         res_df.to_csv(csv_out_path, index=False)
         print(f"   - Simulation data exported for UI: {csv_out_path}")
+
+        # Persist the confidence signal so the dashboard can surface it (the CSV
+        # only carries the curve, not the model's out-of-sample quality). When
+        # low_confidence is true the reallocation was already suppressed above,
+        # so the UI just needs to warn that the projection is directional.
+        metrics_out = {
+            "cv_r_squared": float(cv_r2),
+            "r_squared": float(elasticity_results.get("r_squared", 0.0)),
+            "marketing_contribution_of_kpi_pct": float(
+                elasticity_results.get("marketing_contribution_of_kpi_pct", 0.0)
+            ),
+            "low_confidence": bool(not trust_reallocation),
+            "reallocation_suppressed": bool(not trust_reallocation),
+        }
+        with open(
+            os.path.join(output_dir, "global_saturation_metrics.json"),
+            "w",
+            encoding="utf-8",
+        ) as f:
+            json.dump(metrics_out, f, ensure_ascii=False, indent=2)
 
     return (
         res_df,

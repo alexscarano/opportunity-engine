@@ -2118,6 +2118,37 @@ with tab3:
                 st.markdown("---")
                 st.markdown("### Métricas da Estratégia Ótima")
 
+                # Low-confidence guardrail. When the marketing model has no
+                # meaningful out-of-sample fit, the engine already collapsed the
+                # recommended mix back to the historical one (no reallocation) and
+                # flagged it in global_saturation_metrics.json. Surface it here so
+                # the numbers below read as directional, not as a solid channel
+                # reshuffle recommendation.
+                sat_metrics = {}
+                try:
+                    _mpath = os.path.join(output_dir, "global_saturation_metrics.json")
+                    if os.path.exists(_mpath):
+                        with open(_mpath, encoding="utf-8") as _f:
+                            sat_metrics = json.load(_f)
+                except Exception:
+                    sat_metrics = {}
+
+                if sat_metrics.get("low_confidence"):
+                    st.error(
+                        "⚠️ **Projeção de baixa confiança.** O modelo de marketing "
+                        f"explica apenas {sat_metrics.get('cv_r_squared', 0) * 100:.1f}% "
+                        "da variação fora da amostra (validação walk-forward), e a "
+                        "contribuição de mídia medida foi de "
+                        f"{sat_metrics.get('marketing_contribution_of_kpi_pct', 0):.1f}% "
+                        f"do {kpi_name}. Por isso **a recomendação de realocar "
+                        "orçamento entre canais foi desativada** — os números abaixo "
+                        "refletem só o efeito de gastar mais no **mesmo mix atual**, e "
+                        "devem ser lidos como direcionais, não como decisão de mix. "
+                        "Sinal fraco assim costuma vir de **escopo** (o KPI conta "
+                        "vendas de todos os canais, não só os pagos) ou de pouca "
+                        "variação de investimento no período analisado."
+                    )
+
                 cfg_avg_ticket = config.get("average_ticket", 0)
                 cfg_conv_rate = config.get("conversion_rate_from_kpi_to_bo", 0)
                 if kpi_is_monetary:

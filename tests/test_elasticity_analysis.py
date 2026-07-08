@@ -216,6 +216,64 @@ class TestPredictClippedKpi(unittest.TestCase):
         self.assertGreater(predicted_400, predicted_300)
 
 
+class TestReallocationSuppression(unittest.TestCase):
+    """The money-critical guardrail: a low-confidence model must NOT recommend
+    moving budget between channels (Projected == Historical projection)."""
+
+    def _make_results(self, cv_r2):
+        from sklearn.linear_model import Ridge
+        from sklearn.preprocessing import MinMaxScaler
+        from elasticity_analysis import geometric_adstock, hill_transform
+
+        rng = np.random.default_rng(0)
+        n = 120
+        a = rng.uniform(100, 200, n)
+        b = rng.uniform(100, 200, n)
+        kpi = 1000 + 5 * a + 1 * b + rng.normal(0, 10, n)  # A far more efficient
+        df = pd.DataFrame({"A": a, "B": b, "kpi": kpi})
+        df["kpi_organic_baseline"] = 1000.0
+        params = {"alphas": [0.0, 0.0], "ks": [1.0, 1.0], "ss": [150.0, 150.0]}
+        tdf = pd.DataFrame()
+        for i, c in enumerate(["A", "B"]):
+            ad = geometric_adstock(df[c].values, params["alphas"][i])
+            tdf[c] = hill_transform(ad, params["ks"][i], params["ss"][i])
+        # fit on .values (no feature names) -- the engine feeds the scaler plain
+        # lists at simulate time, so a name-carrying scaler just spams warnings.
+        scaler = MinMaxScaler().fit(tdf.values)
+        y = df["kpi"] - df["kpi_organic_baseline"]
+        model = Ridge(alpha=1.0, positive=True, fit_intercept=False).fit(
+            scaler.transform(tdf.values), y
+        )
+        return {
+            "dataframe": df,
+            "spend_cols": ["A", "B"],
+            "optimal_params": params,
+            "model": model,
+            "scaler": scaler,
+            "organic_baseline_mean": 1000.0,
+            "contribution_pct": {"A": 80.0, "B": 20.0},
+            "cv_r_squared": cv_r2,
+        }
+
+    def _max_realloc_gap(self, cv_r2):
+        from elasticity_analysis import generate_aggregated_response_curve
+
+        cfg = {"reallocation_min_cv_r2": 0.1, "max_channel_mix_share": 0.9}
+        out = generate_aggregated_response_curve(self._make_results(cv_r2), cfg)
+        df = out[0]
+        return (
+            (df["Projected_Total_KPIs"] - df["Projected_Total_KPIs_Historical"])
+            .abs()
+            .max()
+        )
+
+    def test_low_cv_r2_suppresses_reallocation(self):
+        self.assertLess(self._max_realloc_gap(cv_r2=0.0), 1e-6)
+
+    def test_high_cv_r2_allows_reallocation(self):
+        self.assertGreater(self._max_realloc_gap(cv_r2=0.9), 0.0)
+
+
 class TestWalkForwardCvScore(unittest.TestCase):
 
     def test_high_cv_r2_when_feature_truly_drives_lift(self):
