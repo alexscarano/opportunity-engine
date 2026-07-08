@@ -9,7 +9,7 @@ import json
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import Ridge
-from sklearn.model_selection import KFold
+from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import r2_score
 from sklearn.preprocessing import MinMaxScaler
 from scipy.optimize import minimize
@@ -148,36 +148,69 @@ def predict_clipped_kpi(organic_baseline_mean, mkt_model, mkt_scaler, mkt_featur
     return organic_baseline_mean + mkt_model.predict(scaled_features)[0]
 
 
+def _transform_channels(df, spend_cols, alphas, ks, ss):
+    """Adstock + Hill-saturate each channel's spend into a features DataFrame."""
+    transformed_df = pd.DataFrame()
+    for i, col in enumerate(spend_cols):
+        adstocked_spend = geometric_adstock(df[col].values, alphas[i])
+        transformed_df[col] = hill_transform(adstocked_spend, ks[i], ss[i])
+    return transformed_df
+
+
+def walk_forward_cv_score(transformed_df, kpi_lift, n_splits=3):
+    """
+    Walk-forward (expanding-window) CV for the Stage-2 marketing fit. Returns
+    (mean_out_of_sample_mse, pooled_out_of_fold_r2).
+
+    Selecting the adstock/Hill params by OUT-OF-SAMPLE error instead of in-sample
+    MSE is the core fix for the identifiability problem: the flexible saturation
+    transform (3 params/channel) could drive in-sample MSE down by overfitting
+    noise, which pinned params on their bounds and reported an R^2 that didn't
+    generalize. The scaler is refit on each training fold so test folds stay
+    genuinely out of sample. Falls back to in-sample when there is too little
+    data to split.
+    """
+    X = np.asarray(transformed_df.values, dtype=float)
+    y = np.asarray(kpi_lift, dtype=float)
+    n = len(y)
+    usable_splits = min(n_splits, max(1, n // 20))
+    if usable_splits < 2:
+        scaler = MinMaxScaler()
+        Xs = scaler.fit_transform(X)
+        model = Ridge(alpha=1.0, positive=True, fit_intercept=False).fit(Xs, y)
+        pred = model.predict(Xs)
+        return float(np.mean((y - pred) ** 2)), float(r2_score(y, pred))
+
+    tscv = TimeSeriesSplit(n_splits=usable_splits)
+    fold_mses, oof_true, oof_pred = [], [], []
+    for train_idx, test_idx in tscv.split(X):
+        scaler = MinMaxScaler().fit(X[train_idx])
+        model = Ridge(alpha=1.0, positive=True, fit_intercept=False).fit(
+            scaler.transform(X[train_idx]), y[train_idx]
+        )
+        pred = model.predict(scaler.transform(X[test_idx]))
+        fold_mses.append(float(np.mean((y[test_idx] - pred) ** 2)))
+        oof_true.extend(y[test_idx].tolist())
+        oof_pred.extend(pred.tolist())
+
+    r2 = r2_score(oof_true, oof_pred) if len(set(oof_true)) > 1 else 0.0
+    return float(np.mean(fold_mses)), float(r2)
+
+
 def elasticity_objective_function(params, df, kpi_lift, spend_cols):
     """
-    Objective function for the Two-Stage Elasticity Analysis optimization.
-    Minimizes the Mean Squared Error against the residual KPI lift.
+    Objective for the Two-Stage Elasticity optimization: minimize the
+    walk-forward CV MSE of the Stage-2 fit (not in-sample MSE -- see
+    walk_forward_cv_score for why).
     """
     num_channels = len(spend_cols)
     alphas = params[:num_channels]
     ks = params[num_channels : 2 * num_channels]
     ss = params[2 * num_channels : 3 * num_channels]
 
-    transformed_df = pd.DataFrame()
-
-    # Apply adstock and saturation transformations to each channel
-    for i, col in enumerate(spend_cols):
-        adstocked_spend = geometric_adstock(df[col].values, alphas[i])
-        saturated_spend = hill_transform(adstocked_spend, ks[i], ss[i])
-        transformed_df[col] = saturated_spend
-
-    # Scale the features
-    scaler = MinMaxScaler()
-    X_scaled = scaler.fit_transform(transformed_df)
-
-    # Fit Ridge regression with positivity constraint (no intercept for lift)
-    model = Ridge(alpha=1.0, positive=True, fit_intercept=False)
-    model.fit(X_scaled, kpi_lift)
-
-    y_pred = model.predict(X_scaled)
-
-    # Minimize MSE
-    return np.mean((kpi_lift - y_pred) ** 2)
+    transformed_df = _transform_channels(df, spend_cols, alphas, ks, ss)
+    mse, _ = walk_forward_cv_score(transformed_df, kpi_lift)
+    return mse
 
 
 def optimize_with_restarts(objective, initial_params, bounds, args, n_restarts=5, seed=42):
@@ -340,7 +373,14 @@ def run_mmm_engine(config):
         # k <= 1 forces every channel concave (diminishing returns) from the
         # first dollar, which is the standard assumption for media response.
         + [(0.1, 1.0)] * len(active_spend_cols)
-        + [(df[col].mean() * 0.01, df[col].mean() * 20) for col in active_spend_cols]
+        # Hill s (inflection) bounded to the observed spend range, not mean*20.
+        # Letting s balloon far past real spend (e.g. 1.6M when the channel never
+        # spent near that) flattens the Hill curve into a straight line over the
+        # whole data -- "saturation" stops being modeled at all. Capping s near
+        # the historical max keeps the inflection inside the range the curve is
+        # actually calibrated against.
+        + [(df[col].mean() * 0.01, max(df[col].max() * 3, df[col].mean() * 2))
+           for col in active_spend_cols]
     )
 
     # Initial guesses
@@ -350,12 +390,16 @@ def run_mmm_engine(config):
         + [df[col].mean() for col in active_spend_cols]
     )
 
-    # Run optimization from multiple starting points to avoid a bad local minimum
+    # Run optimization from multiple starting points to avoid a bad local minimum.
+    # n_restarts kept modest: the objective is now a walk-forward CV (k Ridge refits
+    # per evaluation), so each restart is ~k times costlier than the old in-sample
+    # objective. 3 restarts still clears the local-minimum regression test.
     result = optimize_with_restarts(
         elasticity_objective_function,
         initial_params,
         bounds,
         args=(df, y_lift, active_spend_cols),
+        n_restarts=3,
     )
 
     if not result.success:
@@ -385,7 +429,19 @@ def run_mmm_engine(config):
 
     y_mkt_pred = mkt_model.predict(X_mkt_scaled)
     final_r2 = r2_score(y_lift, y_mkt_pred)
-    print(f"   - Marketing Model R² (on lift): {final_r2:.4f}")
+    # Honest out-of-sample fit metric. In-sample R^2 flatters a flexible model;
+    # cv_r2 <= 0 means the marketing model does not generalize (predicts the lift
+    # worse than its own mean on held-out days) -- treat the mix/ROAS below as
+    # unreliable when that happens.
+    _, cv_r2 = walk_forward_cv_score(transformed_mkt, y_lift)
+    print(f"   - Marketing Model R² (in-sample on lift): {final_r2:.4f}")
+    print(f"   - Marketing Model R² (walk-forward CV): {cv_r2:.4f}")
+    if cv_r2 <= 0:
+        print(
+            "   - AVISO (baixa confianca): o modelo de marketing nao generaliza "
+            "(R2 CV <= 0). A divisao de contribuicao e o mix recomendado abaixo "
+            "tem confianca baixa -- ha pouco sinal de midia neste periodo."
+        )
 
     # Calculate contribution breakdown
     contributions = {
@@ -437,6 +493,7 @@ def run_mmm_engine(config):
     return {
         "contribution_pct": contribution_pct,
         "r_squared": final_r2,
+        "cv_r_squared": cv_r2,
         "model": mkt_model,
         "scaler": mkt_scaler,
         "optimal_params": {"alphas": final_alphas, "ks": final_ks, "ss": final_ss},

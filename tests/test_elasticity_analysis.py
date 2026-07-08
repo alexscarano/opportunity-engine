@@ -4,6 +4,7 @@ import os
 import unittest
 
 import numpy as np
+import pandas as pd
 from scipy.optimize import minimize
 
 sys.path.append(
@@ -18,6 +19,7 @@ from elasticity_analysis import (
     optimize_with_restarts,
     predict_clipped_kpi,
     bootstrap_average_coefficients,
+    walk_forward_cv_score,
 )
 
 
@@ -212,6 +214,32 @@ class TestPredictClippedKpi(unittest.TestCase):
         predicted_400 = predict_clipped_kpi(500.0, FakeModel(), FakeScaler(), [400.0])
         self.assertNotEqual(predicted_300, predicted_400)
         self.assertGreater(predicted_400, predicted_300)
+
+
+class TestWalkForwardCvScore(unittest.TestCase):
+
+    def test_high_cv_r2_when_feature_truly_drives_lift(self):
+        # A feature that linearly drives the lift should generalize out-of-sample.
+        rng = np.random.default_rng(0)
+        n = 120
+        x = rng.uniform(0, 1, n)
+        lift = 5.0 * x + rng.normal(0, 0.1, n)
+        transformed = pd.DataFrame({"CH": x})
+        _, r2 = walk_forward_cv_score(transformed, lift)
+        self.assertGreater(r2, 0.5)
+
+    def test_cv_r2_not_positive_on_pure_noise(self):
+        # Lift independent of the feature -> the model must NOT show it generalizes.
+        # In-sample R^2 would be spuriously > 0; walk-forward CV R^2 should be ~0
+        # or negative. This is exactly the "no real signal" case the metric exists
+        # to expose (the two-stage clip artifact manufactured such lift before).
+        rng = np.random.default_rng(1)
+        n = 120
+        x = rng.uniform(0, 1, n)
+        lift = rng.normal(0, 1, n)  # unrelated to x
+        transformed = pd.DataFrame({"CH": x})
+        _, r2 = walk_forward_cv_score(transformed, lift)
+        self.assertLessEqual(r2, 0.1)
 
 
 if __name__ == "__main__":
