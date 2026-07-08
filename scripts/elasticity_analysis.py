@@ -200,6 +200,33 @@ def optimize_with_restarts(objective, initial_params, bounds, args, n_restarts=5
     return best_result
 
 
+def bootstrap_average_coefficients(X, y, n_bootstrap=200, seed=42):
+    """
+    Refits Ridge(alpha=1.0, positive=True, fit_intercept=False) on n_bootstrap
+    resamples of the rows (with replacement) and returns the mean coefficient
+    vector across resamples.
+
+    A single fit of a positive-constrained Ridge on correlated columns tends to
+    hand all the credit to one column and zero the other (a stable but fragile
+    corner solution -- see docs/superpowers/specs/2026-07-06-dashboard-inconsistencies-fix-design.md
+    for the original diagnosis and the 2026-07-08 follow-up confirming it happens
+    even when the zeroed channel has real, substantial spend). Averaging over
+    resamples smooths this out: a channel that only wins the corner solution by
+    chance on the full dataset won't win it in every resample.
+    """
+    rng = np.random.default_rng(seed)
+    n_rows = X.shape[0]
+    y_arr = np.asarray(y)
+    coefs = np.zeros((n_bootstrap, X.shape[1]))
+    for b in range(n_bootstrap):
+        idx = rng.integers(0, n_rows, n_rows)
+        model = Ridge(alpha=1.0, positive=True, fit_intercept=False).fit(
+            X[idx], y_arr[idx]
+        )
+        coefs[b] = model.coef_
+    return coefs.mean(axis=0)
+
+
 def run_mmm_engine(config):
     """
     Runs the Two-Stage Elasticity Analysis (MMM) engine.
@@ -322,6 +349,7 @@ def run_mmm_engine(config):
     mkt_model = Ridge(alpha=1.0, positive=True, fit_intercept=False).fit(
         X_mkt_scaled, y_lift
     )
+    mkt_model.coef_ = bootstrap_average_coefficients(X_mkt_scaled, y_lift)
 
     y_mkt_pred = mkt_model.predict(X_mkt_scaled)
     final_r2 = r2_score(y_lift, y_mkt_pred)
@@ -507,6 +535,49 @@ def generate_aggregated_response_curve(
             )
         return predict_clipped_kpi(organic_baseline_mean, mkt_model, mkt_scaler, mkt_features)
 
+    def optimize_spend_mix_for_budget(total_budget, previous_optimal_mix=None):
+        if total_budget <= 0:
+            return {col: 0.0 for col in active_spend_cols}
+            
+        def objective(spend_array):
+            mkt_features = []
+            for i, col in enumerate(active_spend_cols):
+                simulated_adstocked = spend_array[i] * adstock_multipliers[col]
+                mkt_features.append(
+                    hill_transform(
+                        simulated_adstocked, opt_params["ks"][i], opt_params["ss"][i]
+                    )
+                )
+            return -predict_clipped_kpi(organic_baseline_mean, mkt_model, mkt_scaler, mkt_features)
+            
+        if previous_optimal_mix is None:
+            init_guess = np.array([total_budget * historical_mix.get(col, 0) for col in active_spend_cols])
+        else:
+            init_guess = np.array([total_budget * previous_optimal_mix.get(col, 0) for col in active_spend_cols])
+            
+        bounds = [(0, total_budget) for _ in active_spend_cols]
+        constraints = [{'type': 'eq', 'fun': lambda x: np.sum(x) - total_budget}]
+        
+        result = minimize(
+            objective,
+            init_guess,
+            bounds=bounds,
+            constraints=constraints,
+            method="SLSQP",
+            options={'disp': False}
+        )
+        
+        optimal_spends = result.x if result.success else init_guess
+        optimal_spends = np.maximum(0, optimal_spends)
+        if np.sum(optimal_spends) > 0:
+            optimal_spends = optimal_spends / np.sum(optimal_spends) * total_budget
+            
+        return {col: optimal_spends[i] / total_budget for i, col in enumerate(active_spend_cols)}
+
+    # --- NEW: Strategic Reallocation (Same Baseline Budget, Dynamically Optimized Elasticity Mix) ---
+    reallocated_optimal_mix = optimize_spend_mix_for_budget(total_avg_daily_spend, previous_optimal_mix=historical_mix)
+    reallocated_kpi = simulate_kpi(total_avg_daily_spend, reallocated_optimal_mix)
+
     # Baseline using Historical Mix
     baseline_kpi = simulate_kpi(total_avg_daily_spend, historical_mix)
     baseline_point = {
@@ -516,27 +587,40 @@ def generate_aggregated_response_curve(
         "projected_kpis": {
             "Média Histórica": baseline_kpi,
             "Pico de Eficiência": simulate_kpi(total_avg_daily_spend, optimized_mix),
-            "Modelo de Elasticidade": simulate_kpi(
-                total_avg_daily_spend, strategic_mix
-            ),
+            "Modelo de Elasticidade": reallocated_kpi,
         },
     }
 
-    # Generate curve using the Strategic Mix (Elasticity optimal path)
+    # Generate curve using the Dynamic Strategic Mix (Elasticity optimal path)
     simulation_results = []
+    last_optimal_mix = reallocated_optimal_mix
+    
     for m in multipliers:
         current_total_daily_spend = total_avg_daily_spend * m
-        total_kpi_daily = simulate_kpi(current_total_daily_spend, strategic_mix)
+        
+        if current_total_daily_spend == 0:
+            current_optimal_mix = {col: 0.0 for col in active_spend_cols}
+        else:
+            current_optimal_mix = optimize_spend_mix_for_budget(current_total_daily_spend, previous_optimal_mix=last_optimal_mix)
+            last_optimal_mix = current_optimal_mix
+            
+        total_kpi_daily = simulate_kpi(current_total_daily_spend, current_optimal_mix)
         historical_kpi_daily = simulate_kpi(current_total_daily_spend, historical_mix)
         optimized_kpi_daily = simulate_kpi(current_total_daily_spend, optimized_mix)
-        simulation_results.append(
-            {
-                "Daily_Investment": current_total_daily_spend,
-                "Projected_Total_KPIs": total_kpi_daily,
-                "Projected_Total_KPIs_Historical": historical_kpi_daily,
-                "Projected_Total_KPIs_Optimized": optimized_kpi_daily,
-            }
-        )
+        
+        res_dict = {
+            "Daily_Investment": current_total_daily_spend,
+            "Projected_Total_KPIs": total_kpi_daily,
+            "Projected_Total_KPIs_Historical": historical_kpi_daily,
+            "Projected_Total_KPIs_Optimized": optimized_kpi_daily,
+        }
+        
+        for ch in active_spend_cols:
+            res_dict[f"Spend_{ch}_Historical"] = current_total_daily_spend * historical_mix.get(ch, 0)
+            res_dict[f"Spend_{ch}_Optimized"] = current_total_daily_spend * optimized_mix.get(ch, 0)
+            res_dict[f"Spend_{ch}_Strategic"] = current_total_daily_spend * current_optimal_mix.get(ch, 0)
+            
+        simulation_results.append(res_dict)
 
     res_df = pd.DataFrame(simulation_results)
     res_df["Incremental_KPI"] = (res_df["Projected_Total_KPIs"] - baseline_kpi).clip(
@@ -546,23 +630,15 @@ def generate_aggregated_response_curve(
         res_df["Daily_Investment"] - total_avg_daily_spend
     ).clip(lower=0)
 
-    # NEW: Calculate exact channel splits per row to empower Streamlit UI Charting
-    for ch in strategic_mix.keys():
-        res_df[f"Spend_{ch}_Historical"] = res_df[
-            "Daily_Investment"
-        ] * historical_mix.get(ch, 0)
-        res_df[f"Spend_{ch}_Optimized"] = res_df[
-            "Daily_Investment"
-        ] * optimized_mix.get(ch, 0)
-        res_df[f"Spend_{ch}_Strategic"] = res_df[
-            "Daily_Investment"
-        ] * strategic_mix.get(ch, 0)
-
     optimization_target = config.get("optimization_target", "REVENUE").upper()
     financial_targets = config.get("financial_targets", {})
 
-    conversion_rate = config.get("conversion_rate_from_kpi_to_bo", 0)
-    avg_ticket = config.get("average_ticket", 0)
+    kpi_is_monetary = config.get("kpi_is_monetary", False)
+    # ponytail: when the KPI is already money, revenue = kpi (multiplier=1), no
+    # count-to-revenue conversion applies, regardless of optimization_target.
+    conversion_rate = 1.0 if kpi_is_monetary else config.get("conversion_rate_from_kpi_to_bo", 0)
+    avg_ticket = 1.0 if kpi_is_monetary else config.get("average_ticket", 0)
+    revenue_mode = kpi_is_monetary or optimization_target == "REVENUE"
     baseline_revenue = baseline_kpi * conversion_rate * avg_ticket
     res_df["Projected_Revenue"] = (
         res_df["Projected_Total_KPIs"] * conversion_rate * avg_ticket
@@ -581,7 +657,7 @@ def generate_aggregated_response_curve(
     curve_segment = res_df[res_df["Daily_Investment"] >= total_avg_daily_spend].copy()
     if len(curve_segment) > 5:
         if (
-            optimization_target == "REVENUE"
+            revenue_mode
             and "Incremental_ROI" in curve_segment.columns
         ):
             max_efficiency_idx = curve_segment["Incremental_ROI"].idxmax()
@@ -602,6 +678,7 @@ def generate_aggregated_response_curve(
     inc_opt_kpi = max(0, opt_kpi - baseline_kpi)
     inc_opt_inv = max(0, max_eff_investment - total_avg_daily_spend)
 
+    eff_optimal_mix = optimize_spend_mix_for_budget(max_eff_investment, previous_optimal_mix=reallocated_optimal_mix)
     max_efficiency_point = {
         "Scenario": "Máxima Eficiência",
         "Daily_Investment": max_eff_investment,
@@ -611,10 +688,10 @@ def generate_aggregated_response_curve(
         "projected_kpis": {
             "Média Histórica": simulate_kpi(max_eff_investment, historical_mix),
             "Pico de Eficiência": opt_kpi,
-            "Modelo de Elasticidade": simulate_kpi(max_eff_investment, strategic_mix),
+            "Modelo de Elasticidade": simulate_kpi(max_eff_investment, eff_optimal_mix),
         },
     }
-    if optimization_target == "REVENUE":
+    if revenue_mode:
         max_efficiency_point["Projected_Revenue"] = (
             opt_kpi * conversion_rate * avg_ticket
         )
@@ -627,8 +704,6 @@ def generate_aggregated_response_curve(
             else 0
         )
 
-    # --- NEW: Strategic Reallocation (Same Baseline Budget, Elasticity Mix) ---
-    reallocated_kpi = simulate_kpi(total_avg_daily_spend, strategic_mix)
     strategic_reallocation_point = {
         "Scenario": "Realocação Estratégica",
         "Daily_Investment": total_avg_daily_spend,
@@ -642,7 +717,7 @@ def generate_aggregated_response_curve(
             "Modelo de Elasticidade": reallocated_kpi,
         },
     }
-    if optimization_target == "REVENUE":
+    if revenue_mode:
         strategic_reallocation_point["Projected_Revenue"] = (
             reallocated_kpi * conversion_rate * avg_ticket
         )
@@ -666,7 +741,7 @@ def generate_aggregated_response_curve(
 
     valid_points_df = res_df[res_df["Daily_Investment"] > total_avg_daily_spend].copy()
 
-    if (
+    if not kpi_is_monetary and (
         optimization_target == "CONVERSIONS"
         or max_cpa != float("inf")
         or max_icpa != float("inf")
@@ -683,7 +758,7 @@ def generate_aggregated_response_curve(
                 (valid_points_df["iCPA"] > 0) & (valid_points_df["iCPA"] <= max_icpa)
             ]
 
-    if optimization_target == "REVENUE" or min_roas > 0 or min_iroas > 0:
+    if revenue_mode or min_roas > 0 or min_iroas > 0:
         if (
             "ROAS" not in valid_points_df.columns
             and "Projected_Revenue" in valid_points_df.columns
@@ -711,10 +786,11 @@ def generate_aggregated_response_curve(
 
     strategic_limit_point["Scenario"] = "Limite Estratégico"
     strategic_limit_inv = strategic_limit_point["Daily_Investment"]
+    limit_optimal_mix = optimize_spend_mix_for_budget(strategic_limit_inv, previous_optimal_mix=reallocated_optimal_mix)
     strategic_limit_point["projected_kpis"] = {
         "Média Histórica": simulate_kpi(strategic_limit_inv, historical_mix),
         "Pico de Eficiência": simulate_kpi(strategic_limit_inv, optimized_mix),
-        "Modelo de Elasticidade": simulate_kpi(strategic_limit_inv, strategic_mix),
+        "Modelo de Elasticidade": simulate_kpi(strategic_limit_inv, limit_optimal_mix),
     }
 
     # NEW: Export the DataFrame to a CSV so Streamlit can use it for interactability

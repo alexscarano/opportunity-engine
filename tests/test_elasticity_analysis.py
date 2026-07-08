@@ -10,7 +10,14 @@ sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "scripts"))
 )
 
-from elasticity_analysis import cap_channel_mix_share, optimize_with_restarts, predict_clipped_kpi
+from sklearn.linear_model import Ridge
+
+from elasticity_analysis import (
+    cap_channel_mix_share,
+    optimize_with_restarts,
+    predict_clipped_kpi,
+    bootstrap_average_coefficients,
+)
 
 
 class TestCapChannelMixShare(unittest.TestCase):
@@ -79,6 +86,36 @@ class TestOptimizeWithRestarts(unittest.TestCase):
             two_basin_objective, [1.0], bounds, args=(None,), n_restarts=5, seed=42
         )
         self.assertEqual(result_a.fun, result_b.fun)
+
+
+class TestBootstrapAverageCoefficients(unittest.TestCase):
+
+    def test_recovers_a_zeroed_channels_true_contribution(self):
+        # Two highly correlated columns (corr ~0.99) that BOTH truly drive y
+        # (70/30 split). A single positive-constrained Ridge fit on the full
+        # data hands 100% of the credit to column A and zeroes column B -- a
+        # stable corner solution caused by the collinearity, not a fluke.
+        rng = np.random.default_rng(5)
+        n = 60
+        a = rng.uniform(1, 10, n)
+        b = np.clip(a + rng.normal(0, 0.5, n), 0.1, None)
+        X = np.column_stack([a, b])
+        y = 0.7 * a + 0.3 * b + rng.normal(0, 2.0, n)
+
+        single_fit = Ridge(alpha=1.0, positive=True, fit_intercept=False).fit(X, y)
+        self.assertEqual(single_fit.coef_[1], 0.0)
+
+        boot_coef = bootstrap_average_coefficients(X, y, n_bootstrap=300, seed=42)
+        self.assertGreater(boot_coef[1], 0.0)
+
+    def test_reproducible_with_a_fixed_seed(self):
+        rng = np.random.default_rng(1)
+        X = rng.uniform(1, 10, (40, 2))
+        y = X[:, 0] + X[:, 1] + rng.normal(0, 1.0, 40)
+
+        result_a = bootstrap_average_coefficients(X, y, n_bootstrap=50, seed=7)
+        result_b = bootstrap_average_coefficients(X, y, n_bootstrap=50, seed=7)
+        np.testing.assert_array_equal(result_a, result_b)
 
 
 class FakeScaler:
