@@ -13,8 +13,16 @@ logger = logging.getLogger("opp_engine_tracker")
 
 # Optional: keep logging for raw actions without email barriers, if desired later, but removing barrier logic here.
 
+from PIL import Image
+
+try:
+    favicon = Image.open("Logos/DASH_CAIXA_POSITIVO.png")
+except Exception:
+    favicon = None
+
 st.set_page_config(
     page_title="Opportunity Engine",
+    page_icon=favicon,
     layout="wide",
     initial_sidebar_state="expanded",
 )
