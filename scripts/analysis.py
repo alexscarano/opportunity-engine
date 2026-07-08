@@ -386,11 +386,31 @@ def run_causal_impact_analysis(
         impact_df["impact"] = impact_df["kpi"] - impact_df["predicted"]
         impact_df.fillna(0, inplace=True)
 
-        _, p_value = stats.ttest_1samp(impact_df["impact"], 0)
         abs_lift = impact_df["impact"].sum()
         rel_lift = (
             (abs_lift / predicted_mean.sum()) * 100 if predicted_mean.sum() != 0 else 0
         )
+
+        # Significance from the state-space model's OWN forecast uncertainty,
+        # not a one-sample t-test on the daily impacts. The daily impacts are
+        # autocorrelated forecast residuals whose error grows with the horizon;
+        # a t-test treats the ~14 days as i.i.d. samples of a mean, inflating the
+        # effective N and understating the p-value (false significance). Here we
+        # test the CUMULATIVE impact against the forecast's cumulative standard
+        # error (se_mean grows with horizon), which is the counterfactual's real
+        # noise band. Cumulative SE ~ sqrt(sum se_t^2) treats the per-step errors
+        # as independent -- an approximation, but far sounder than the t-test.
+        se = np.asarray(forecast.se_mean, dtype=float)
+        se = se[np.isfinite(se)]
+        cum_se = float(np.sqrt(np.sum(se**2))) if se.size else 0.0
+        if cum_se > 0:
+            z_stat = abs_lift / cum_se
+            p_value = float(2 * stats.norm.sf(abs(z_stat)))
+            impact_ci_lower = abs_lift - 1.96 * cum_se
+            impact_ci_upper = abs_lift + 1.96 * cum_se
+        else:
+            p_value = 1.0
+            impact_ci_lower = impact_ci_upper = abs_lift
 
         event_investment_agg = event_investment_series.reset_index().rename(
             columns={0: "investment"}
@@ -504,6 +524,8 @@ def run_causal_impact_analysis(
             "end_date": post_period[1],
             "product_group": product_group,
             "absolute_lift": abs_lift,
+            "absolute_lift_ci_lower": impact_ci_lower,
+            "absolute_lift_ci_upper": impact_ci_upper,
             "relative_lift_pct": rel_lift,
             "p_value": p_value,
             "investment_change_pct": investment_change_pct,
