@@ -307,7 +307,12 @@ def run_mmm_engine(config):
     base_scaler = MinMaxScaler()
     X_base_scaled = base_scaler.fit_transform(X_base)
 
-    base_model = Ridge(alpha=1.0, positive=True).fit(X_base_scaled, y_total)
+    # No positivity constraint here: calendar/context effects on the baseline can
+    # legitimately be negative (weekends/holidays depressing the KPI). Forcing
+    # positive coefficients pinned ~1/3 of them to exactly 0, so those depressing
+    # effects leaked into the residual and were misattributed to marketing lift.
+    # Positivity is kept only on the Stage-2 marketing model, where it belongs.
+    base_model = Ridge(alpha=1.0).fit(X_base_scaled, y_total)
     df["kpi_organic_baseline"] = base_model.predict(X_base_scaled)
 
     # Calculate Lift for Stage 2
