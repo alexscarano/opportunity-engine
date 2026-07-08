@@ -188,6 +188,13 @@ Branch `feat/robust-csv-ingestion`. 115 testes passando. Guia de validação em
 | F8 | ⛔ diferido | ver abaixo |
 | F10 | ⛔ diferido | ver abaixo |
 | F14 | 📄 config | `financial_targets` desativados → "Limite Estratégico" é 1,5×; é escolha de config, não bug |
+| F15 | ✅ feito | realocação de mix desativada quando CV R² < `reallocation_min_cv_r2` (0,1); banner de baixa confiança na UI; iROAS do projeto caiu 42x→3,4x |
+
+> **F15 (achado do dashboard pós-fixes):** mesmo com a contribuição honesta, a
+> curva projetava +27% "só por realocar" (iROAS 42x) sobre um modelo com CV R²≈0,04.
+> O sinal de confiança existia só no log, não na tela. Correção: suprimir a
+> realocação na origem quando CV R² baixo (mix estratégico = histórico) e persistir
+> `global_saturation_metrics.json` para a UI mostrar o banner.
 
 ### F8 e F10 — diferidos conscientemente (não são bugs ativos)
 

@@ -121,6 +121,34 @@ CONVERSIONS não tem efeito quando o KPI é monetário (o app usa modo receita/R
 
 ---
 
+## 5b. Recomendação de realocação desativada em baixa confiança (F15) ⭐
+
+**Contexto:** mesmo com a contribuição honesta (~5%), a curva ainda projetava
++27% de ganho **só por realocar** orçamento entre canais (iROAS 42x) — o
+otimizador concentrando budget no canal de maior coeficiente ajustado no ruído.
+Agora, quando o CV R² < 0,1 (sem poder preditivo), a realocação é **desativada**.
+
+**O que testar:** abra "Métricas da Estratégia Ótima" no seu projeto.
+
+✅ **Certo:**
+- Aparece um **banner vermelho de "Projeção de baixa confiança"** dizendo que a
+  realocação entre canais foi desativada.
+- O **Marginal iROAS caiu** (no seu projeto: de ~42x para **~3,4x**) porque agora
+  só conta o efeito de gastar mais no **mesmo mix**, não a realocação.
+- Na aba de curvas, a linha "estratégica/otimizada" deve **coincidir** com a linha
+  do mix histórico (não há mais reshuffle).
+- O arquivo `outputs/.../global_saturation_analysis/global_saturation_metrics.json`
+  tem `"low_confidence": true` e `"reallocation_suppressed": true`.
+
+🚩 **Alerta:** banner não aparecer apesar do CV R² baixo; ou a curva "otimizada"
+ainda descolar da histórica (realocação ativa) com CV R² < 0,1.
+
+> **Ajuste fino:** o limiar é `reallocation_min_cv_r2` (default 0,1) no config. Se
+> um projeto tiver sinal real (CV R² ≥ 0,1), a realocação volta a aparecer
+> normalmente e o banner some.
+
+---
+
 ## 6. Baseline e limpezas (F6/F12/F13)
 
 **F6 (baseline sem `positive=True`):** o baseline orgânico agora pode ter efeitos
