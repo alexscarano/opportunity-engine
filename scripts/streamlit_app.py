@@ -2143,7 +2143,7 @@ with tab3:
 
                 # Render warning expanders sequentially below the title
                 if sat_metrics.get("low_confidence"):
-                    with st.expander("Alerta: Projeção de baixa confiança", expanded=False):
+                    with st.expander("Alerta: Projeção de baixa confiança", expanded=True):
                         st.markdown(
                             "**Projeção de baixa confiança.** O modelo de marketing "
                             f"explica apenas {sat_metrics.get('cv_r_squared', 0) * 100:.1f}% "

@@ -220,3 +220,13 @@ para outra** (o mesmo α significa "peso no presente" no `ewm` e "carryover" no
 > adstockado **de novo** (convolução no elasticity / lfilter no causal) — adstock
 > duplo em canais de correlação negativa. Narrow (só esses canais) e pré-existente;
 > registrar para revisão futura.
+
+### 🟣 ANOMALIAS REPORTADAS (Pós-Audit)
+
+**F16 — Escala Base de KPIs Extremamente Alta e Absorvida como Orgânica**
+*Problema:* Nos resultados recentes, o modelo processa valores de "Vendas via lead" e exibe gráficos batendo ~330 milhões com CPAs irrisórios (R$ 0,02 a R$ 0,29). A base de dados do usuário possui uma escala absurda que independe fortemente do investimento e quase 100% (ex: 95%+) do tráfego ou conversões reais são absorvidos como tráfego *orgânico* pelo modelo baseline `local-level`. Isso gera KPIs gigantescos no Eixo Y que confundem a percepção de escala do painel e distorcem a alocação visual.
+*Correção:* Não é um erro estrito matemático dos algoritmos, mas reflete uma peculiaridade dos inputs inseridos (leads não qualificados ou inflados) ou falta de filtragem. Para UX, os números foram mantidos como recebidos e, caso o sinal estatístico seja insatisfatório, a realocação é travada e um aviso claro é disparado no Streamlit (`low_confidence`), cujo painel foi ajustado para vir aberto por padrão na interface.
+
+**F17 — Narrativa do LLM Ignorando a Baixa Confiança**
+*Problema:* O relatório global gerado pelo Gemini (`global_narrative.json`) escreve o veredito executivo com extrema certeza ("Escalar os investimentos para...") baseando-se estritamente na curva, mesmo quando a bandeira `low_confidence` está armada e as métricas reportadas no Streamlit dizem para desconsiderar o lift do mix de canais.
+*Correção:* Dependência de documentação – por ora, recomenda-se cautela. No futuro, é necessário injetar e reforçar a flag estatística (`low_confidence = True`) *dentro do prompt* do Gemini em `gemini_report.py`, exigindo que o LLM adapte seu tom de forma conservadora nesses cenários e aponte explicitamente a incerteza nos resultados de previsão.
