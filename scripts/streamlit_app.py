@@ -1488,11 +1488,13 @@ with tab2:
                 # 2. Executive Verdict
                 verdict = narrative.get("executive_verdict", "")
                 if verdict:
+                    import html
+                    safe_verdict = html.escape(verdict).replace(r'\$', '$')
                     st.markdown(
                         f"""
                         <div class="insight-box" style="margin-bottom: 25px;">
                             <h3 style="margin-top: 0; color: #1a73e8;">Veredito Executivo</h3>
-                            <p style="font-size: 1.1rem; font-weight: 500; line-height: 1.6; margin: 0;">{verdict.replace(r'\$', '$')}</p>
+                            <p style="font-size: 1.1rem; font-weight: 500; line-height: 1.6; margin: 0;">{safe_verdict}</p>
                         </div>
                         """,
                         unsafe_allow_html=True,
