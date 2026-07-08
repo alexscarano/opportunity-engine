@@ -491,6 +491,31 @@ def generate_html_report(
     except Exception as e:
         print(f"   - ERROR: Could not write HTML report to file. Details: {e}")
 
+    # Save the narrative JSON file as well for native dashboard rendering
+    json_output_path = output_filename.replace(".html", ".json")
+    try:
+        extended_narrative = narrative.copy()
+        extended_narrative["metrics"] = {
+            "incremental_investment": incremental_investment,
+            "incremental_investment_str": incremental_investment_str,
+            "business_impact_label": business_impact_label_str,
+            "business_impact_value": business_impact_str,
+            "efficiency_label": efficiency_label,
+            "efficiency_value": efficiency_val,
+            "r_squared": results_data.get("model_r_squared", 0),
+            "p_value": results_data.get("p_value", 0),
+            "mape": results_data.get("mape", 0),
+            "mae": results_data.get("mae", 0),
+            "avg_ticket": avg_ticket,
+            "conversion_rate": config.get("conversion_rate_from_kpi_to_bo", 0),
+            "p_value_threshold": config.get("p_value_threshold", 0.05)
+        }
+        with open(json_output_path, "w", encoding="utf-8") as f:
+            json.dump(extended_narrative, f, ensure_ascii=False, indent=4)
+        print(f"   - Gemini narrative JSON saved successfully to '{json_output_path}'.")
+    except Exception as e:
+        print(f"   - WARNING: Could not write narrative JSON. Details: {e}")
+
 
 def generate_global_gemini_report(
     gemini_client, config, scenarios=None, total_investment=None, kpi_projections=None
