@@ -164,3 +164,52 @@ agregado por evento (e não por canal).
 convexo e o silenciamento do baseline), depois decidir com você se F1 (Fase 1) é
 refactor agora ou reporta-se honestamente como "efeito não detectável" enquanto
 não há um modelo conjunto.
+
+---
+
+## Status de implementação (2026-07-08)
+
+Branch `feat/robust-csv-ingestion`. 115 testes passando. Guia de validação em
+`docs/superpowers/plans/2026-07-08-guia-de-testes.md`.
+
+| ID | Status | Commit / nota |
+|---|---|---|
+| F1 | ✅ feito (rota A) | removido `clip(lower=0)` nos dois engines; contribuição honesta caiu p/ ~1,8-3% |
+| F2 | ✅ feito | seleção de α/k/s por CV walk-forward; `s` limitado à faixa observada; reporta CV R² |
+| F3 | ✅ feito | Hill `k≤1` em `analysis.py` (paridade com MMM) |
+| F4 | ✅ feito | significância pela incerteza do state-space (não teste-t); IC 95% exposto |
+| F5 | ✅ feito | fabricação de 5% removida → aviso honesto de sinal fraco |
+| F6 | ✅ feito | `positive=True` removido do baseline Stage 1 |
+| F7 | ✅ feito | `KFold` morto removido; regularização/seleção via CV |
+| F9 | ⚠️ parcial | incerteza do forecast (IC) exposta; R² in-sample do causal mantido (é o fit do contrafactual no pré-período, defensável) |
+| F11 | ✅ feito | aviso quando `CONVERSIONS` + `kpi_is_monetary` |
+| F12 | ✅ feito | `strategic_mix` morto removido |
+| F13 | ✅ feito | armadilha de dummies no baseline OLS corrigida |
+| F8 | ⛔ diferido | ver abaixo |
+| F10 | ⛔ diferido | ver abaixo |
+| F14 | 📄 config | `financial_targets` desativados → "Limite Estratégico" é 1,5×; é escolha de config, não bug |
+
+### F8 e F10 — diferidos conscientemente (não são bugs ativos)
+
+**F8** (causal aplica um α/k/s global a todos os canais): esses canais
+transformados entram só como **variáveis de controle** candidatas (o LassoCV
+descarta as inúteis), e o efeito do evento é medido pelo *gap do forecast*, não
+por esses coeficientes. Corrigir = ajustar saturação por canal dentro do causal:
+mais custo e mais modos de falha, ganho marginal na qualidade do controle. Fica
+para quando/if a qualidade do contrafactual virar gargalo.
+
+**F10** (três convenções de adstock: `ewm` no preprocessor, `lfilter` no
+`analysis`, convolução no `elasticity`): **cada módulo é internamente
+consistente** — o α é ajustado e aplicado dentro da mesma convenção, então não há
+vazamento ativo de α entre convenções hoje. Unificar mudaria numericamente o
+causal e o pré-processamento sem verdade-base para validar. Deixado como está,
+com este aviso: **qualquer mudança futura não deve passar um α de uma convenção
+para outra** (o mesmo α significa "peso no presente" no `ewm` e "carryover" no
+`lfilter`/convolução — opostos).
+
+> **Risco correlato observado (não corrigido):** o pré-tratamento de correlação
+> negativa em `data_preprocessor.load_and_prepare_data` já aplica adstock (EWMA)
+> ao `investment` e **muta** a coluna; esse investimento já suavizado depois é
+> adstockado **de novo** (convolução no elasticity / lfilter no causal) — adstock
+> duplo em canais de correlação negativa. Narrow (só esses canais) e pré-existente;
+> registrar para revisão futura.
