@@ -2378,10 +2378,11 @@ with tab3:
                 st.markdown("---")
                 st.markdown("### Evolução do Mix de Canais por Orçamento")
                 st.markdown(
-                    "Mostra a alocação recomendada entre canais (Modelo de Elasticidade) — uma "
-                    "proporção fixa — em reais por canal, conforme o orçamento total escala. As "
-                    "porcentagens permanecem constantes; o que muda é o valor em R\\$ que cada canal "
-                    "recebe a cada nível de investimento total."
+                    "Mostra como a alocação recomendada entre canais (Modelo de Elasticidade) muda "
+                    "conforme o orçamento total escala: a cada nível de investimento, o mix é "
+                    "reotimizado para o de maior retorno projetado (respeitando o teto de "
+                    f"{int(config.get('max_channel_mix_share', 0.4) * 100)}% de participação por "
+                    "canal), então as porcentagens podem variar de um nível para o outro."
                 )
                 st.plotly_chart(
                     build_channel_mix_evolution(
