@@ -297,7 +297,7 @@ def run_causal_impact_analysis(
         pre_data_for_model = model_data.loc[pre_period[0] : pre_period[1]].copy()
         post_data = model_data.loc[post_period[0] : post_period[1]].copy()
 
-        min_pre_period_days = 30  # Require at least 30 days of pre-period data
+        min_pre_period_days = config.get("min_pre_period_days", 14)  # Require at least configurable days of pre-period data (default 14)
         if (
             pre_data_for_model.empty
             or post_data.empty
@@ -739,8 +739,12 @@ def run_opportunity_projection(
             "Projected_Total_KPIs"
         ].clip(lower=0)
 
-        conversion_rate = config.get("conversion_rate_from_kpi_to_bo", 0)
-        avg_ticket = config.get("average_ticket", 0)
+        kpi_is_monetary = config.get("kpi_is_monetary", False)
+        # ponytail: when the KPI is already money, revenue = kpi (multiplier=1), no
+        # count-to-revenue conversion applies, regardless of optimization_target.
+        conversion_rate = 1.0 if kpi_is_monetary else config.get("conversion_rate_from_kpi_to_bo", 0)
+        avg_ticket = 1.0 if kpi_is_monetary else config.get("average_ticket", 0)
+        revenue_mode = kpi_is_monetary or optimization_target == "REVENUE"
 
         baseline_point = {
             "Scenario": "Cenário Atual",
@@ -751,7 +755,7 @@ def run_opportunity_projection(
             "Incremental_Revenue": 0,
             "Incremental_ROI": 0,
         }
-        if optimization_target == "REVENUE":
+        if revenue_mode:
             baseline_point["Projected_Revenue"] = (
                 hist_avg_kpi * conversion_rate * avg_ticket
             )
@@ -772,7 +776,7 @@ def run_opportunity_projection(
             response_curve_df["Incremental_KPI"] < 0, "Incremental_KPI"
         ] = 0
 
-        if optimization_target == "REVENUE":
+        if revenue_mode:
             if avg_ticket <= 0:
                 raise ValueError(
                     "'average_ticket' must be greater than 0 for a REVENUE-based optimization."
@@ -804,7 +808,7 @@ def run_opportunity_projection(
             response_curve_df["Daily_Investment"] >= baseline_investment
         ].copy()
         if not incremental_curve.empty:
-            if optimization_target == "REVENUE":
+            if revenue_mode:
                 # For revenue, max efficiency is the point with the highest ROI
                 max_efficiency_index = incremental_curve["Incremental_ROI"].idxmax()
             else:
@@ -849,8 +853,9 @@ def run_opportunity_projection(
             response_curve_df["Daily_Investment"] > baseline_investment
         ].copy()
 
-        # Apply Conversion filters (if mode is CONVERSIONS or if filters are explicitly set)
-        if (
+        # Apply Conversion filters (if mode is CONVERSIONS or if filters are explicitly set).
+        # Skipped when the KPI is already money -- CPA/iCPA (R$ per R$) is meaningless there.
+        if not kpi_is_monetary and (
             optimization_target == "CONVERSIONS"
             or max_cpa != float("inf")
             or max_icpa != float("inf")
@@ -874,8 +879,8 @@ def run_opportunity_projection(
                     & (valid_points_df["iCPA"] <= max_icpa)
                 ]
 
-        # Apply Revenue filters (if mode is REVENUE or if filters are explicitly set)
-        if optimization_target == "REVENUE" or min_roas > 0 or min_iroas > 0:
+        # Apply Revenue filters (if mode is REVENUE, KPI is monetary, or filters are explicitly set)
+        if revenue_mode or min_roas > 0 or min_iroas > 0:
             if "ROAS" not in valid_points_df.columns:
                 # Total Revenue / Total Investment
                 valid_points_df["ROAS"] = (

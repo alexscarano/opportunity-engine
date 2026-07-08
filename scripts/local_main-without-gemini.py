@@ -204,22 +204,21 @@ def main(config, args):
                             continue
 
                         # --- Optimization: R-squared threshold from config ---
-                        r_squared_threshold = config.get("r_squared_threshold", 0.6)
+                        r_squared_threshold = config.get("r_squared_threshold", 0.3)
 
                         is_significant = (
                             results_data["p_value"] < config["p_value_threshold"]
-                        )
+                        ) if config.get("require_statistical_significance", True) else True
                         is_logical = (
-                            results_data["investment_change_pct"] > 0
-                            and results_data["absolute_lift"] > 0
-                        ) or (
-                            results_data["investment_change_pct"] < 0
-                            and results_data["absolute_lift"] < 0
-                        )
+                            (results_data["investment_change_pct"] > 0
+                             and results_data["absolute_lift"] > 0)
+                            or (results_data["investment_change_pct"] < 0
+                                and results_data["absolute_lift"] < 0)
+                        ) if config.get("require_logical_direction", True) else True
                         has_good_fit = (
                             results_data.get("model_r_squared", 0)
                             >= r_squared_threshold
-                        )
+                        ) if config.get("require_model_fit", True) else True
 
                         if is_significant and is_logical and has_good_fit:
                             print(

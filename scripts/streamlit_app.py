@@ -763,6 +763,13 @@ with tab1:
                 value="Sessions",
                 help="Nome exato da coluna (ex: Sessions, Conversions, Leads).",
             )
+            kpi_is_monetary = st.checkbox(
+                "O KPI já está em R$ (ex: Faturamento, Receita)",
+                value=False,
+                help="Marque se a coluna de KPI já é o valor monetário final (não uma contagem "
+                "de conversões/leads). Isso ignora Taxa de Conversão e Ticket Médio abaixo, e "
+                "troca CPA/iCPA por ROAS/iROAS no dashboard.",
+            )
             optimization_target_label = st.selectbox(
                 "Objetivo da Otimização",
                 options=[
@@ -790,6 +797,64 @@ with tab1:
                 value=100.0,
                 step=10.0,
             )
+            if kpi_is_monetary:
+                # ponytail: KPI is already money, conversion_rate/avg_ticket must be a no-op
+                conversion_rate = 1.0
+                avg_ticket = 1.0
+
+            with st.expander("Configurações da Análise Causal"):
+                min_pre_period_days = st.number_input(
+                    "Dias Mínimos Pré-Evento",
+                    min_value=7,
+                    max_value=90,
+                    value=14,
+                    help="Dias mínimos de histórico necessários antes do evento (padrão: 14, reduzido de 30).",
+                )
+                r_squared_threshold = st.slider(
+                    "Ajuste Mínimo do Modelo (R²)",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.30,
+                    step=0.05,
+                    help="Qualidade mínima de ajuste do modelo (padrão: 0.3, reduzido de 0.5/0.6).",
+                )
+                p_value_threshold = st.slider(
+                    "Significância Máxima (p-value)",
+                    min_value=0.01,
+                    max_value=0.5,
+                    value=0.10,
+                    step=0.01,
+                    help="Limite máximo para aceitar o impacto como estatisticamente significante.",
+                )
+                increase_threshold_percent = st.number_input(
+                    "Var. Mínima de Aumento de Investimento (%)",
+                    min_value=1,
+                    max_value=100,
+                    value=20,
+                    help="Aumento de investimento semanal vs média das 12 semanas anteriores para detectar evento.",
+                )
+                decrease_threshold_percent = st.number_input(
+                    "Var. Mínima de Queda de Investimento (%)",
+                    min_value=1,
+                    max_value=100,
+                    value=10,
+                    help="Queda de investimento semanal vs média das 12 semanas anteriores para detectar evento.",
+                )
+                require_statistical_significance = st.checkbox(
+                    "Exigir Significância Estatística (p-value)",
+                    value=True,
+                    help="Se marcado, exige significância estatística (p-value < limite).",
+                )
+                require_logical_direction = st.checkbox(
+                    "Exigir Direção Lógica do Impacto",
+                    value=True,
+                    help="Se marcado, exige que o investimento e o resultado variem na mesma direção.",
+                )
+                require_model_fit = st.checkbox(
+                    "Exigir Ajuste Mínimo do Modelo (R²)",
+                    value=True,
+                    help="Se marcado, exige que a precisão (R²) do modelo seja maior ou igual ao limite.",
+                )
 
         with col2:
             st.subheader("Dados Brutos (CSV)")
@@ -898,6 +963,7 @@ with tab1:
                     "performance_kpi_column": perf_kpi,
                     "average_ticket": avg_ticket,
                     "conversion_rate_from_kpi_to_bo": conversion_rate,
+                    "kpi_is_monetary": kpi_is_monetary,
                     "financial_targets": {
                         "target_cpa": target_cpa if target_cpa > 0 else 999999,
                         "target_icpa": 999999,
@@ -906,10 +972,14 @@ with tab1:
                     },
                     "optimization_target": optimization_target,
                     "investment_limit_factor": 1.5,
-                    "p_value_threshold": 0.1,
-                    "r_squared_threshold": 0.5,
-                    "increase_threshold_percent": 20,
-                    "decrease_threshold_percent": 10,
+                    "p_value_threshold": p_value_threshold,
+                    "r_squared_threshold": r_squared_threshold,
+                    "increase_threshold_percent": increase_threshold_percent,
+                    "decrease_threshold_percent": decrease_threshold_percent,
+                    "min_pre_period_days": min_pre_period_days,
+                    "require_statistical_significance": require_statistical_significance,
+                    "require_logical_direction": require_logical_direction,
+                    "require_model_fit": require_model_fit,
                     "post_event_days": 14,
                     "max_events_to_analyze": 3,
                     "treat_outliers": False,
@@ -1178,14 +1248,22 @@ with tab2:
             st.info(
                 "Nenhum relatório de Impacto Causal encontrado. Rode o motor na aba Setup ou verifique as restrições abaixo."
             )
+            cond_lines = [
+                f'- Pico ou queda de investimento semanal de ao menos **+{active_config.get("increase_threshold_percent", 50)}%** ou **-{active_config.get("decrease_threshold_percent", 30)}%** vs. a média das últimas 12 semanas',
+                f'- Pelo menos **{active_config.get("min_pre_period_days", 14)} dias** de dados antes do evento',
+            ]
+            if active_config.get("require_statistical_significance", True):
+                cond_lines.append(f'- Significância estatística: **p-value < {active_config.get("p_value_threshold", 0.1)}**')
+            if active_config.get("require_model_fit", True):
+                cond_lines.append(f'- Ajuste do modelo: **R² ≥ {active_config.get("r_squared_threshold", 0.3)}**')
+            if active_config.get("require_logical_direction", True):
+                cond_lines.append('- Direção lógica (investimento sobe e KPI sobe, ou ambos caem)')
+
+            cond_str = "\n".join(cond_lines)
             st.markdown(
                 f"""
-**Um evento só gera relatório se passar por todas as condições:**
-- Pico ou queda de investimento semanal de ao menos **+{active_config.get("increase_threshold_percent", 50)}%** ou **-{active_config.get("decrease_threshold_percent", 30)}%** vs. a média das últimas 12 semanas
-- Pelo menos **30 dias** de dados antes do evento
-- Significância estatística: **p-value < {active_config.get("p_value_threshold", 0.1)}**
-- Ajuste do modelo: **R² ≥ {active_config.get("r_squared_threshold", 0.6)}**
-- Direção lógica (investimento sobe e KPI sobe, ou ambos caem)
+**Um evento só gera relatório se passar por todas as condições ativas:**
+{cond_str}
 
 Consulte o log de execução da aba Setup para ver o motivo exato de cada evento descartado.
 """
@@ -1287,6 +1365,7 @@ with tab3:
 
         if df is not None:
             kpi_name = config.get("primary_business_metric_name", "Transactions")
+            kpi_is_monetary = config.get("kpi_is_monetary", False)
             DAYS_IN_MONTH = 30
             df["Monthly_Investment"] = df["Daily_Investment"] * DAYS_IN_MONTH
             df["Monthly_KPI"] = df["Projected_Total_KPIs"] * DAYS_IN_MONTH
@@ -1497,23 +1576,40 @@ with tab3:
                 }
                 scenario_df = pd.DataFrame(scenario_data)
 
-                scenario_df[f"Custo por {kpi_name}"] = (
-                    scenario_df["Investimento Mensal"]
-                    / scenario_df[f"Projeção de {kpi_name}"]
-                )
+                # ponytail: when the KPI is already R$, "cost per KPI" (R$/R$) is meaningless
+                # -- show ROAS/iROAS (KPI/investment) instead of CPA/iCPA (investment/KPI).
+                cost_col = f"ROAS ({kpi_name})" if kpi_is_monetary else f"Custo por {kpi_name}"
+                icpa_col = "iROAS" if kpi_is_monetary else "iCPA"
+
+                if kpi_is_monetary:
+                    scenario_df[cost_col] = (
+                        scenario_df[f"Projeção de {kpi_name}"]
+                        / scenario_df["Investimento Mensal"]
+                    )
+                else:
+                    scenario_df[cost_col] = (
+                        scenario_df["Investimento Mensal"]
+                        / scenario_df[f"Projeção de {kpi_name}"]
+                    )
                 scenario_df["Investimento Incremental"] = (
                     scenario_df["Investimento Mensal"] - base_inv
                 )
                 scenario_df[f"{kpi_name} Incrementais"] = (
                     scenario_df[f"Projeção de {kpi_name}"] - base_kpi
                 )
-                scenario_df["iCPA"] = compute_incremental_cpa(
-                    scenario_df["Investimento Incremental"],
-                    scenario_df[f"{kpi_name} Incrementais"],
-                )
+                if kpi_is_monetary:
+                    scenario_df[icpa_col] = (
+                        scenario_df[f"{kpi_name} Incrementais"]
+                        / scenario_df["Investimento Incremental"]
+                    ).replace([np.inf, -np.inf], float("nan"))
+                else:
+                    scenario_df[icpa_col] = compute_incremental_cpa(
+                        scenario_df["Investimento Incremental"],
+                        scenario_df[f"{kpi_name} Incrementais"],
+                    )
 
                 scenario_df.loc[
-                    0, ["Investimento Incremental", f"{kpi_name} Incrementais", "iCPA"]
+                    0, ["Investimento Incremental", f"{kpi_name} Incrementais", icpa_col]
                 ] = 0.0
 
                 def format_currency(val):
@@ -1538,24 +1634,32 @@ with tab3:
                         return f"{val / 1000:,.1f}k"
                     return f"{val:,.0f}"
 
+                def format_ratio(val):
+                    if pd.isna(val):
+                        return "N/A"
+                    return f"{val:,.2f}x"
+
+                kpi_formatter = format_currency if kpi_is_monetary else format_number_kpi
+                cost_formatter = format_ratio if kpi_is_monetary else format_currency
+
                 scenario_df_display = scenario_df.copy()
                 scenario_df_display["Investimento Mensal"] = scenario_df_display[
                     "Investimento Mensal"
                 ].apply(format_currency)
                 scenario_df_display[f"Projeção de {kpi_name}"] = scenario_df_display[
                     f"Projeção de {kpi_name}"
-                ].apply(format_number_kpi)
-                scenario_df_display[f"Custo por {kpi_name}"] = scenario_df_display[
-                    f"Custo por {kpi_name}"
-                ].apply(format_currency)
+                ].apply(kpi_formatter)
+                scenario_df_display[cost_col] = scenario_df_display[cost_col].apply(
+                    cost_formatter
+                )
                 scenario_df_display["Investimento Incremental"] = scenario_df_display[
                     "Investimento Incremental"
                 ].apply(format_currency)
                 scenario_df_display[f"{kpi_name} Incrementais"] = scenario_df_display[
                     f"{kpi_name} Incrementais"
-                ].apply(format_number_kpi)
-                scenario_df_display["iCPA"] = scenario_df_display["iCPA"].apply(
-                    format_currency
+                ].apply(kpi_formatter)
+                scenario_df_display[icpa_col] = scenario_df_display[icpa_col].apply(
+                    cost_formatter
                 )
 
                 st.dataframe(
@@ -1586,54 +1690,97 @@ with tab3:
                     "Orçamento Mensal Otimizado", value=inv_str, delta=delta_inv_str
                 )
 
+                kpi_prefix = "R$ " if kpi_is_monetary else ""
                 kpi_str = (
-                    f"{kpi_val / 1e6:,.2f}M" if kpi_val >= 1e6 else f"{kpi_val:,.0f}"
+                    f"{kpi_prefix}{kpi_val / 1e6:,.2f}M"
+                    if kpi_val >= 1e6
+                    else f"{kpi_prefix}{kpi_val:,.0f}"
                 )
                 delta_kpi_str = (
-                    f"{inc_kpi_val / 1e6:,.2f}M Incremental"
+                    f"{kpi_prefix}{inc_kpi_val / 1e6:,.2f}M Incremental"
                     if abs(inc_kpi_val) >= 1e6
-                    else f"{inc_kpi_val:,.0f} Incremental"
+                    else f"{kpi_prefix}{inc_kpi_val:,.0f} Incremental"
                 )
 
                 col2.metric(
                     f"Projeção Mensal de {kpi_name}", value=kpi_str, delta=delta_kpi_str
                 )
 
-                cpa_val = (
-                    optimal_point["CPA"]
-                    if "CPA" in optimal_point
-                    else (
-                        optimal_point["Daily_Investment"]
-                        / optimal_point["Projected_Total_KPIs"]
+                if kpi_is_monetary:
+                    # ponytail: KPI is already R$, so investment/KPI ("cost per KPI") is
+                    # meaningless -- show ROAS (KPI/investment) instead of CPA.
+                    roas_val = kpi_val / inv_val if inv_val > 0 else 0.0
+                    baseline_roas = (
+                        true_baseline_monthly_kpi / true_baseline_monthly_inv
+                        if true_baseline_monthly_inv > 0
+                        else None
                     )
-                )
-                baseline_cpa = (
-                    true_baseline_monthly_inv / true_baseline_monthly_kpi
-                    if true_baseline_monthly_kpi > 0
-                    else None
-                )
-                cpa_delta = f"R$ {cpa_val - baseline_cpa:+,.2f} vs Baseline" if baseline_cpa else None
-                col3.metric("Global CPA", value=f"R$ {cpa_val:,.2f}", delta=cpa_delta, delta_color="inverse")
+                    roas_delta = (
+                        f"{roas_val - baseline_roas:+,.2f}x vs Baseline"
+                        if baseline_roas
+                        else None
+                    )
+                    col3.metric(
+                        "Global ROAS",
+                        value=f"{roas_val:.2f}x",
+                        delta=roas_delta,
+                        delta_color="normal",
+                    )
 
-                icpa_val = optimal_point["iCPA"] if "iCPA" in optimal_point else 0.0
-                if pd.isna(icpa_val):
-                    icpa_val = 0.0
-                target_icpa_cfg = active_config.get("financial_targets", {}).get("target_icpa")
-                # ponytail: 999999 is the sentinel for "no limit set" (see line ~857)
-                if target_icpa_cfg and target_icpa_cfg < 999999 and icpa_val > 0:
-                    icpa_delta = f"limite R$ {target_icpa_cfg:,.2f}"
-                    icpa_delta_color = "normal" if icpa_val <= target_icpa_cfg else "inverse"
-                elif icpa_val > 0:
-                    icpa_delta = "sem limite configurado"
-                    icpa_delta_color = "off"
+                    iroas_val = optimal_point["iROAS"] if "iROAS" in optimal_point else 0.0
+                    if pd.isna(iroas_val):
+                        iroas_val = 0.0
+                    target_iroas_cfg = active_config.get("financial_targets", {}).get("target_iroas")
+                    if target_iroas_cfg and target_iroas_cfg > 0 and iroas_val > 0:
+                        iroas_delta = f"limite {target_iroas_cfg:.2f}x"
+                        iroas_delta_color = "normal" if iroas_val >= target_iroas_cfg else "inverse"
+                    elif iroas_val > 0:
+                        iroas_delta = "sem limite configurado"
+                        iroas_delta_color = "off"
+                    else:
+                        iroas_delta, iroas_delta_color = None, "off"
+                    col4.metric(
+                        "Marginal iROAS",
+                        value=f"{iroas_val:.2f}x" if iroas_val > 0 else "N/A",
+                        delta=iroas_delta,
+                        delta_color=iroas_delta_color,
+                    )
                 else:
-                    icpa_delta, icpa_delta_color = None, "off"
-                col4.metric(
-                    "Marginal iCPA",
-                    value=f"R$ {icpa_val:,.2f}" if icpa_val > 0 else "N/A",
-                    delta=icpa_delta,
-                    delta_color=icpa_delta_color,
-                )
+                    cpa_val = (
+                        optimal_point["CPA"]
+                        if "CPA" in optimal_point
+                        else (
+                            optimal_point["Daily_Investment"]
+                            / optimal_point["Projected_Total_KPIs"]
+                        )
+                    )
+                    baseline_cpa = (
+                        true_baseline_monthly_inv / true_baseline_monthly_kpi
+                        if true_baseline_monthly_kpi > 0
+                        else None
+                    )
+                    cpa_delta = f"R$ {cpa_val - baseline_cpa:+,.2f} vs Baseline" if baseline_cpa else None
+                    col3.metric("Global CPA", value=f"R$ {cpa_val:,.2f}", delta=cpa_delta, delta_color="inverse")
+
+                    icpa_val = optimal_point["iCPA"] if "iCPA" in optimal_point else 0.0
+                    if pd.isna(icpa_val):
+                        icpa_val = 0.0
+                    target_icpa_cfg = active_config.get("financial_targets", {}).get("target_icpa")
+                    # ponytail: 999999 is the sentinel for "no limit set" (see line ~857)
+                    if target_icpa_cfg and target_icpa_cfg < 999999 and icpa_val > 0:
+                        icpa_delta = f"limite R$ {target_icpa_cfg:,.2f}"
+                        icpa_delta_color = "normal" if icpa_val <= target_icpa_cfg else "inverse"
+                    elif icpa_val > 0:
+                        icpa_delta = "sem limite configurado"
+                        icpa_delta_color = "off"
+                    else:
+                        icpa_delta, icpa_delta_color = None, "off"
+                    col4.metric(
+                        "Marginal iCPA",
+                        value=f"R$ {icpa_val:,.2f}" if icpa_val > 0 else "N/A",
+                        delta=icpa_delta,
+                        delta_color=icpa_delta_color,
+                    )
 
                 _, c2, c3, c4, _ = st.columns([0.5, 1, 1, 1, 0.5])
 
@@ -1642,10 +1789,16 @@ with tab3:
                     if true_baseline_monthly_kpi > 0
                     else 0.0
                 )
+                kpi_gain_abs = kpi_val - true_baseline_monthly_kpi
+                gain_delta_label = (
+                    f"{kpi_prefix}{kpi_gain_abs:,.0f}"
+                    if kpi_is_monetary
+                    else f"{kpi_gain_abs:,.0f} unidades"
+                )
                 c2.metric(
                     f"Ganho de {kpi_name} (%)",
                     value=f"{kpi_gain_pct:+.1f}%",
-                    delta=f"{kpi_val - true_baseline_monthly_kpi:,.0f} unidades",
+                    delta=gain_delta_label,
                 )
 
                 inc_inv_val = optimal_point["Incremental_Investment"] * DAYS_IN_MONTH
