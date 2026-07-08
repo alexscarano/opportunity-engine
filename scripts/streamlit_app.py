@@ -2222,7 +2222,15 @@ with tab3:
                             "(tipicamente até 10-15x). Confira se 'O KPI já está em "
                             f"R$' e o Ticket Médio (acima, em Parâmetros do Negócio) "
                             f"realmente correspondem à coluna '{kpi_name}' do seu CSV "
-                            "antes de usar esses números para decisão."
+                            "antes de usar esses números para decisão.\n\n"
+                            "Se essas configurações já estiverem corretas, o problema "
+                            "mais provável é de **escopo**: o arquivo de investimento "
+                            "pode cobrir só uma fatia da mídia (ex: só estes canais "
+                            f"pagos), enquanto '{kpi_name}' pode estar contando vendas "
+                            "de todos os canais (orgânico, direto, etc.). Nesse caso "
+                            "nenhuma combinação de checkbox resolve -- é preciso um "
+                            "arquivo de investimento mais completo, ou isolar a métrica "
+                            "só do que esses canais realmente influenciam."
                         )
                 else:
                     cpa_val = (
