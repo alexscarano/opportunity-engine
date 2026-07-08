@@ -327,6 +327,7 @@ def build_events_overview(events_df, validated_keys):
             y=events["percentage_change"],
             marker=dict(color=colors, opacity=opacities),
             text=hover_labels,
+            textposition="none",
             hovertemplate=(
                 "<b>Data:</b> %{x|%d/%m/%Y}<br><b>Variação:</b> %{y:.1f}%"
                 "<br>%{text}<extra></extra>"
@@ -339,6 +340,7 @@ def build_events_overview(events_df, validated_keys):
         yaxis_title="Variação de Investimento (%)",
         margin=dict(l=20, r=20, t=30, b=20),
         showlegend=False,
+        height=450,
     )
     return fig
 
@@ -352,7 +354,7 @@ def build_accuracy_chart(accuracy_df, kpi_name="kpi"):
             y=accuracy_df["kpi"],
             mode="lines",
             name=f"{kpi_name} Real",
-            line=dict(color="black", width=2),
+            line=dict(color="royalblue", width=2),
         )
     )
     fig.add_trace(
@@ -374,6 +376,7 @@ def build_accuracy_chart(accuracy_df, kpi_name="kpi"):
         y=0.98,
         showarrow=False,
         bgcolor="wheat",
+        font=dict(color="black"),
         opacity=0.8,
         align="left",
     )
@@ -398,7 +401,7 @@ def build_causal_line_chart(line_df, kpi_name="kpi"):
             y=line_df["Actual_KPI"],
             mode="lines",
             name=f"{kpi_name} Real",
-            line=dict(color="black", width=2),
+            line=dict(color="royalblue", width=2),
         )
     )
     fig.add_trace(
@@ -462,7 +465,7 @@ def build_sessions_bar_chart(sessions_bar_df, kpi_name="kpi"):
         "Actual": f"{kpi_name} Real",
     }
     x_labels = [labels.get(idx, idx) for idx in sessions_bar_df.index]
-    colors = ["red" if idx == "Forecasted" else "black" for idx in sessions_bar_df.index]
+    colors = ["red" if idx == "Forecasted" else "royalblue" for idx in sessions_bar_df.index]
 
     fig = go.Figure(
         go.Bar(
