@@ -20,6 +20,7 @@ ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 COPY --from=builder /install /usr/local
 COPY logger.py .
 COPY scripts/ ./scripts/
+COPY Logos/ ./Logos/
 
 # runtime-only data, mount as volumes in prod (see .gitignore)
 RUN mkdir -p data/log inputs outputs && chown -R app:app /app
