@@ -318,14 +318,23 @@ def run_mmm_engine(config):
     # Optimization Setup
     bounds = (
         [(0.0, 0.9)] * len(active_spend_cols)
-        + [(0.1, 5.0)] * len(active_spend_cols)
+        # Hill k capped at 1.0: k > 1 makes the curve S-shaped, with a convex
+        # (accelerating-returns) region before its inflection point. For
+        # channels with little independent spend variation, the optimizer
+        # picked k near the old 5.0 ceiling and s far beyond real spend,
+        # landing the whole historical range inside that convex region --
+        # produced a response curve where marginal ROI *increased* with
+        # budget (490x iROAS on a real project's Google Ads channel).
+        # k <= 1 forces every channel concave (diminishing returns) from the
+        # first dollar, which is the standard assumption for media response.
+        + [(0.1, 1.0)] * len(active_spend_cols)
         + [(df[col].mean() * 0.01, df[col].mean() * 20) for col in active_spend_cols]
     )
 
     # Initial guesses
     initial_params = (
         [0.5] * len(active_spend_cols)
-        + [1.5] * len(active_spend_cols)
+        + [1.0] * len(active_spend_cols)
         + [df[col].mean() for col in active_spend_cols]
     )
 
@@ -389,7 +398,7 @@ def run_mmm_engine(config):
         # Override parameters to sensible defaults because fitted ones are likely noise step-functions
         for i, col in enumerate(active_spend_cols):
             final_alphas[i] = 0.5
-            final_ks[i] = 1.5
+            final_ks[i] = 1.0
             final_ss[i] = df[col].mean() if df[col].mean() > 0 else 1.0
 
         # Re-transform with sensible parameters
@@ -514,6 +523,8 @@ def generate_aggregated_response_curve(
 
     avg_daily_spend = {col: df[col].mean() for col in active_spend_cols}
     total_avg_daily_spend = sum(avg_daily_spend.values())
+    historical_max_daily_spend = {col: df[col].max() for col in active_spend_cols}
+    per_channel_limit_factor = config.get("per_channel_investment_limit_factor", 3.0)
 
     historical_mix = {
         col: avg_daily_spend[col] / total_avg_daily_spend
@@ -541,10 +552,24 @@ def generate_aggregated_response_curve(
         adstocked = geometric_adstock(dummy_spend, opt_params["alphas"][i])
         adstock_multipliers[col] = adstocked[-1]
 
+    def _capped_channel_spend(spend, col):
+        # A channel's Hill curve is only calibrated up to what was actually
+        # spent on it historically. Past that, `k`/`s` are extrapolation
+        # guesses -- for a channel with little historical spend variation
+        # they can land the curve still in its convex, accelerating-returns
+        # ramp (real spend^k growth instead of saturating), which produced
+        # an aggregate "response curve" where marginal ROI *increased* with
+        # budget (490x iROAS on a real project's Google Ads channel).
+        # Capping simulated spend per channel keeps every channel within a
+        # range the model was actually fit against, independent of how much
+        # headroom investment_limit_factor gives the aggregate budget.
+        channel_cap = historical_max_daily_spend.get(col, 0) * per_channel_limit_factor
+        return min(spend, channel_cap) if channel_cap > 0 else spend
+
     def simulate_kpi(total_spend, mix):
         mkt_features = []
         for i, col in enumerate(active_spend_cols):
-            simulated_daily_spend = total_spend * mix.get(col, 0)
+            simulated_daily_spend = _capped_channel_spend(total_spend * mix.get(col, 0), col)
             simulated_adstocked = simulated_daily_spend * adstock_multipliers[col]
             mkt_features.append(
                 hill_transform(
@@ -556,11 +581,13 @@ def generate_aggregated_response_curve(
     def optimize_spend_mix_for_budget(total_budget, previous_optimal_mix=None):
         if total_budget <= 0:
             return {col: 0.0 for col in active_spend_cols}
-            
+
         def objective(spend_array):
             mkt_features = []
             for i, col in enumerate(active_spend_cols):
-                simulated_adstocked = spend_array[i] * adstock_multipliers[col]
+                simulated_adstocked = (
+                    _capped_channel_spend(spend_array[i], col) * adstock_multipliers[col]
+                )
                 mkt_features.append(
                     hill_transform(
                         simulated_adstocked, opt_params["ks"][i], opt_params["ss"][i]
@@ -850,6 +877,8 @@ def generate_individual_response_curves(
     organic_baseline_mean = elasticity_results["organic_baseline_mean"]
 
     avg_daily_spend = {col: df[col].mean() for col in active_spend_cols}
+    historical_max_daily_spend = {col: df[col].max() for col in active_spend_cols}
+    per_channel_limit_factor = config.get("per_channel_investment_limit_factor", 3.0)
 
     # Calculate steady-state adstock multipliers
     adstock_multipliers = {}
@@ -872,6 +901,13 @@ def generate_individual_response_curves(
             )
             if rec_spend is not None:
                 max_spend = max(max_spend, rec_spend * 1.2)  # Give some padding
+
+        # Same reasoning as _capped_channel_spend in generate_aggregated_response_curve:
+        # don't let a channel's individual curve chart extrapolate the Hill fit past
+        # a range the model was actually calibrated against.
+        channel_cap = historical_max_daily_spend.get(target_channel, 0) * per_channel_limit_factor
+        if channel_cap > 0:
+            max_spend = min(max_spend, channel_cap)
 
         spend_points = np.linspace(0, max_spend, 100)
 
