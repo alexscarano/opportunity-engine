@@ -567,9 +567,13 @@ def _train_response_model(model_data, product_group, config):
     baseline_model = sm.OLS(y_base, X_base).fit()
     baseline_kpi_predictions = baseline_model.predict(X_base)
 
-    model_data_featured["incremental_kpi"] = (y_base - baseline_kpi_predictions).clip(
-        lower=0
-    )
+    # Signed residual, NOT clipped at 0 (see the same fix in
+    # elasticity_analysis.run_mmm_engine): the OLS baseline has an intercept and
+    # passes through the mean, so the residual is mean ~0. Clipping negatives kept
+    # only the positive half of the noise and fed it to the saturation fit,
+    # manufacturing an incremental response from noise. Fitting on the signed
+    # residual reports the honest response, which can legitimately be near flat.
+    model_data_featured["incremental_kpi"] = y_base - baseline_kpi_predictions
     print("   - Baseline subtracted. Modeling response on incremental KPI.")
 
     # --- 2. Model Investment vs. Incremental KPI ---
