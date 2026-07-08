@@ -315,9 +315,16 @@ def run_mmm_engine(config):
     base_model = Ridge(alpha=1.0).fit(X_base_scaled, y_total)
     df["kpi_organic_baseline"] = base_model.predict(X_base_scaled)
 
-    # Calculate Lift for Stage 2
-    # Ensure lift isn't negative (marketing shouldn't cause negative baseline)
-    y_lift = (y_total - df["kpi_organic_baseline"]).clip(lower=0)
+    # Lift = signed residual of the organic baseline. We deliberately do NOT
+    # clip negatives to 0 anymore: the baseline (with intercept) passes through
+    # the mean, so the residual is mean ~0. Clipping kept only the positive half
+    # of that noise and handed it to the Stage-2 marketing model, manufacturing a
+    # ~15% "marketing lift" even from pure noise (verified with a white-noise
+    # control). Fitting Stage 2 on the signed residual instead reports the honest
+    # net marketing contribution -- which can legitimately be near zero when the
+    # data shows little measurable media effect. Stage 2 keeps positive-only
+    # coefficients on non-negative features, so the total contribution stays >= 0.
+    y_lift = y_total - df["kpi_organic_baseline"]
 
     print(f"   - Stage 2: Optimizing Marketing Response on Incremental Lift...")
     # Optimization Setup
@@ -403,7 +410,7 @@ def run_mmm_engine(config):
         measured_pct = total_marketing_contribution / y_total.sum()
         if measured_pct < min_marketing_pct:
             print(
-                f"   - ⚠️ Sinal de marketing fraco: contribuicao medida "
+                f"   - AVISO (sinal fraco): contribuicao de marketing medida em "
                 f"{measured_pct * 100:.1f}% do KPI (abaixo de {min_marketing_pct * 100:.0f}%). "
                 "Os numeros de ROAS/mix abaixo tem baixa confianca -- o modelo "
                 "encontrou pouco efeito de midia mensuravel neste periodo."
