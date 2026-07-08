@@ -373,7 +373,7 @@ def run_causal_impact_analysis(
         print(f"   - Causal model R-squared (in-sample): {r_squared:.4f}")
 
         accuracy_df = pre_data_for_model.copy()
-        accuracy_df["Predicted"] = in_sample_preds.shift(-1)
+        accuracy_df["Predicted"] = in_sample_preds
         accuracy_df = accuracy_df[["kpi", "Predicted"]].reset_index().tail(90)
 
         forecast = model.get_forecast(
