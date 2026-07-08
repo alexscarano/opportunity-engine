@@ -33,6 +33,22 @@ class TestCapChannelMixShare(unittest.TestCase):
         # Excess (0.6) redistributed proportional to historical mix (GOOGLE 0.5 vs BING 0.16)
         self.assertGreater(capped["GOOGLE"], capped["BING"])
 
+    def test_no_channel_ends_up_over_cap_with_four_channels(self):
+        # Regression: with >=2 channels needing redistribution, GOOGLE's own
+        # share (whatever it settles at after receiving BING's excess) used
+        # to be eligible to receive *more* excess in the next loop pass
+        # (nothing permanently excluded a just-capped channel), overshooting
+        # the cap itself. Reproduces the real response-curve data where this
+        # left two of four channels above 40% instead of the dominant one.
+        mix = {"BING": 1.0, "FACEBOOK": 0.0, "GOOGLE": 0.0, "PMAX": 0.0}
+        historical_mix = {"BING": 0.06, "FACEBOOK": 0.85, "GOOGLE": 0.03, "PMAX": 0.06}
+
+        capped = cap_channel_mix_share(mix, historical_mix, max_share=0.4)
+
+        for channel, share in capped.items():
+            self.assertLessEqual(share, 0.4 + 1e-9, f"{channel} exceeded the cap")
+        self.assertAlmostEqual(sum(capped.values()), 1.0)
+
     def test_leaves_mix_untouched_when_no_channel_exceeds_cap(self):
         mix = {"A": 0.4, "B": 0.35, "C": 0.25}
         capped = cap_channel_mix_share(mix, historical_mix={}, max_share=0.5)

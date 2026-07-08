@@ -468,16 +468,23 @@ def cap_channel_mix_share(mix, historical_mix, max_share):
         return dict(mix)
 
     capped = dict(mix)
+    fixed = set()  # channels already capped -- excluded from receiving more excess
     for _ in range(len(capped)):
-        over = {k: v for k, v in capped.items() if v > max_share}
+        over = {k for k, v in capped.items() if k not in fixed and v > max_share}
         if not over:
             break
 
-        excess = sum(v - max_share for v in over.values())
+        excess = sum(capped[k] - max_share for k in over)
         for k in over:
             capped[k] = max_share
+            fixed.add(k)
 
-        under_keys = [k for k in capped if k not in over]
+        under_keys = [k for k in capped if k not in fixed]
+        if not under_keys:
+            # Too few channels for max_share to be feasible (e.g. 2 channels,
+            # 40% cap can't sum to 100%) -- nothing left to redistribute into.
+            break
+
         weights = {k: capped[k] for k in under_keys}
         if sum(weights.values()) <= 0:
             weights = {k: historical_mix.get(k, 0) for k in under_keys}
