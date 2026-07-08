@@ -313,6 +313,27 @@ class TestFindSaturationPoint(unittest.TestCase):
         # the real, sustained flattening only starts at 70.
         self.assertEqual(result["Daily_Investment"], 70)
 
+    def test_min_investment_floor_prevents_a_ceiling_below_current_spend(self):
+        # A normal concave response curve (steepest at the very first dollar,
+        # decaying from there -- no dip/recovery) makes its own first step the
+        # peak, so an unfloored scan reports "saturation" a few steps later,
+        # e.g. investment=30 here -- below the current baseline of 50, which
+        # is nonsensical for a metric meant to describe how far *scaling up*
+        # keeps paying off. Flooring the search at the baseline should refuse
+        # that answer and fall back to optimal_point instead of underselling
+        # a ceiling you've already exceeded today.
+        df = pd.DataFrame({
+            "Daily_Investment": [0, 10, 20, 30, 40, 50, 60, 70, 80, 90],
+            "Projected_Total_KPIs": [0, 1000, 1500, 1700, 1780, 1860, 1940, 2020, 2100, 2180],
+        })
+        optimal_point = df.iloc[-1]
+
+        unfloored = find_saturation_point(df, optimal_point)
+        floored = find_saturation_point(df, optimal_point, min_investment=50)
+
+        self.assertLess(unfloored["Daily_Investment"], 50)
+        self.assertGreaterEqual(floored["Daily_Investment"], 50)
+
     def test_falls_back_to_optimal_point_when_curve_never_rises(self):
         df = pd.DataFrame({
             "Daily_Investment": [0, 10, 20],

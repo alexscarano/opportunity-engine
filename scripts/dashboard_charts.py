@@ -12,23 +12,38 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 
-def find_saturation_point(df, optimal_point):
+def find_saturation_point(df, optimal_point, min_investment=None):
     """
     Finds the point on the aggregate response curve (sorted by ascending
     investment) where marginal KPI gain has sustainedly collapsed to under 10%
-    of the curve's peak marginal gain.
+    of the peak marginal gain observed at or above `min_investment`.
 
-    Uses the curve's own peak as the 100% reference (not the first step, which
-    can be an extrapolation artifact -- see predict_clipped_kpi in
-    elasticity_analysis.py) and returns the point right after the *last* index
-    still above threshold, so a transient dip that recovers afterward doesn't
-    get mistaken for the real, sustained saturation ceiling.
+    `min_investment` should be the current baseline daily spend when known.
+    A "saturation ceiling" is meant to describe how far *scaling up* keeps
+    paying off -- without this floor, any normal concave response curve (the
+    expected shape: steepest at the very first dollar, decaying from there)
+    reports its own first simulated step as the peak and the ceiling lands
+    a few steps later, below what's already being spent today. That is a
+    correct answer to "where does the curve's slope collapse from *zero*"
+    but not to "how far above today can we push" -- restricting the search to
+    the region actually being scaled into is what makes it the latter.
+
+    Uses that region's own peak as the 100% reference (not literally its
+    first step, which can still be an extrapolation artifact -- see
+    predict_clipped_kpi in elasticity_analysis.py) and returns the point
+    right after the *last* index still above threshold, so a transient dip
+    that recovers afterward doesn't get mistaken for the real, sustained
+    saturation ceiling.
 
     Falls back to `optimal_point` when the curve never rises (or is too short
-    to compute a derivative from).
+    to compute a derivative from) in the searched region.
     """
-    incremental_kpis = df["Projected_Total_KPIs"].diff().fillna(0).values
-    investment_steps = df["Daily_Investment"].diff().fillna(1).values
+    search_df = df
+    if min_investment is not None:
+        search_df = df[df["Daily_Investment"] >= min_investment]
+
+    incremental_kpis = search_df["Projected_Total_KPIs"].diff().fillna(0).values
+    investment_steps = search_df["Daily_Investment"].diff().fillna(1).values
     first_derivative = incremental_kpis / investment_steps
 
     if len(first_derivative) <= 1:
@@ -44,10 +59,10 @@ def find_saturation_point(df, optimal_point):
         return optimal_point
 
     saturation_idx = above_threshold[-1] + 1
-    if saturation_idx >= len(df):
+    if saturation_idx >= len(search_df):
         return optimal_point
 
-    return df.iloc[saturation_idx]
+    return search_df.iloc[saturation_idx]
 
 
 def compute_incremental_cpa(investimento_incremental, kpi_incremental):
