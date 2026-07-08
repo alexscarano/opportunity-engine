@@ -615,13 +615,7 @@ def generate_aggregated_response_curve(
         else 0
         for col in active_spend_cols
     }
-    strategic_mix = {
-        k: v / 100.0 for k, v in elasticity_results["contribution_pct"].items()
-    }
     max_channel_mix_share = config.get("max_channel_mix_share", 0.4)
-    strategic_mix = cap_channel_mix_share(
-        strategic_mix, historical_mix, max_channel_mix_share
-    )
     if not optimized_mix:
         optimized_mix = historical_mix
 
@@ -789,6 +783,14 @@ def generate_aggregated_response_curve(
     conversion_rate = 1.0 if kpi_is_monetary else config.get("conversion_rate_from_kpi_to_bo", 0)
     avg_ticket = 1.0 if kpi_is_monetary else config.get("average_ticket", 0)
     revenue_mode = kpi_is_monetary or optimization_target == "REVENUE"
+    if kpi_is_monetary and optimization_target == "CONVERSIONS":
+        print(
+            "   - AVISO (config): optimization_target='CONVERSIONS' foi ignorado "
+            "porque kpi_is_monetary=true (o KPI ja e R$), entao o modo receita/ROAS "
+            "esta em uso. Se o KPI for uma contagem (leads/vendas em unidades, nao "
+            "R$), desmarque 'KPI ja esta em R$' no setup; senao, defina o alvo como "
+            "RECEITA para remover a contradicao."
+        )
     baseline_revenue = baseline_kpi * conversion_rate * avg_ticket
     res_df["Projected_Revenue"] = (
         res_df["Projected_Total_KPIs"] * conversion_rate * avg_ticket

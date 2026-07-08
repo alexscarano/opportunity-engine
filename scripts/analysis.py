@@ -576,11 +576,16 @@ def _train_response_model(model_data, product_group, config):
         model_data.copy(), country_code=country_code
     )
 
+    # day_0 is the reference category and is_weekend is a linear combination of
+    # day_5/day_6 -- including all of day_0..day_6 + is_weekend alongside the
+    # add_constant() intercept is a perfect dummy-variable trap. Drop both so the
+    # design matrix is full rank (fitted values are unchanged; this just removes
+    # the singular collinearity that made individual coefficients meaningless).
     baseline_features = [
         col
         for col in model_data_featured.columns
-        if "day_" in col
-        or col in ["is_weekend", "is_payday_period", "is_holiday", "Generic Searches"]
+        if (col.startswith("day_") and col != "day_0")
+        or col in ["is_payday_period", "is_holiday", "Generic Searches"]
     ]
     X_base = model_data_featured[baseline_features]
     X_base = sm.add_constant(X_base)
@@ -777,6 +782,13 @@ def run_opportunity_projection(
         conversion_rate = 1.0 if kpi_is_monetary else config.get("conversion_rate_from_kpi_to_bo", 0)
         avg_ticket = 1.0 if kpi_is_monetary else config.get("average_ticket", 0)
         revenue_mode = kpi_is_monetary or optimization_target == "REVENUE"
+        if kpi_is_monetary and optimization_target == "CONVERSIONS":
+            print(
+                "   - AVISO (config): optimization_target='CONVERSIONS' foi ignorado "
+                "porque kpi_is_monetary=true (o KPI ja e R$), entao o modo receita/ROAS "
+                "esta em uso. Se o KPI for uma contagem (unidades, nao R$), desmarque "
+                "'KPI ja esta em R$' no setup; senao, defina o alvo como RECEITA."
+            )
 
         baseline_point = {
             "Scenario": "Cenário Atual",
