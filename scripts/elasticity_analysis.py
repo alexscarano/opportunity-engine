@@ -582,8 +582,15 @@ def generate_aggregated_response_curve(
         optimal_spends = np.maximum(0, optimal_spends)
         if np.sum(optimal_spends) > 0:
             optimal_spends = optimal_spends / np.sum(optimal_spends) * total_budget
-            
-        return {col: optimal_spends[i] / total_budget for i, col in enumerate(active_spend_cols)}
+
+        raw_mix = {col: optimal_spends[i] / total_budget for i, col in enumerate(active_spend_cols)}
+        # Unconstrained, this SLSQP solve routinely hands 100% of the budget to
+        # whichever channel has the best marginal efficiency at this spend level
+        # (a real optimum for a linear-in-coefficients objective, not a fluke) --
+        # the same single-channel collapse cap_channel_mix_share already guards
+        # against for the static strategic_mix. Apply it here too so the dynamic,
+        # per-budget-level mix can't collapse to one channel either.
+        return cap_channel_mix_share(raw_mix, historical_mix, max_channel_mix_share)
 
     # --- NEW: Strategic Reallocation (Same Baseline Budget, Dynamically Optimized Elasticity Mix) ---
     reallocated_optimal_mix = optimize_spend_mix_for_budget(total_avg_daily_spend, previous_optimal_mix=historical_mix)
