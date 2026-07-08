@@ -14,6 +14,7 @@ from sklearn.linear_model import Ridge
 
 from elasticity_analysis import (
     cap_channel_mix_share,
+    cap_channel_share_per_channel,
     optimize_with_restarts,
     predict_clipped_kpi,
     bootstrap_average_coefficients,
@@ -67,6 +68,44 @@ class TestCapChannelMixShare(unittest.TestCase):
         mix = {"A": 1.0, "B": 0.0}
         self.assertEqual(cap_channel_mix_share(mix, {}, None), mix)
         self.assertEqual(cap_channel_mix_share(mix, {}, 1.0), mix)
+
+
+class TestCapChannelSharePerChannel(unittest.TestCase):
+
+    def test_caps_each_channel_at_its_own_ceiling(self):
+        # BING has a much tighter ceiling than FACEBOOK -- e.g. it's derived
+        # from a much smaller historical spend range for that channel.
+        mix = {"BING": 0.9, "FACEBOOK": 0.1}
+        per_channel_max_share = {"BING": 0.1, "FACEBOOK": 0.9}
+
+        capped = cap_channel_share_per_channel(mix, per_channel_max_share, historical_mix={})
+
+        self.assertAlmostEqual(capped["BING"], 0.1)
+        self.assertAlmostEqual(capped["FACEBOOK"], 0.9)
+        self.assertAlmostEqual(sum(capped.values()), 1.0)
+
+    def test_no_channel_ends_up_over_its_own_cap_with_four_channels(self):
+        # Regression mirror of the cap_channel_mix_share fix: a channel
+        # sitting exactly at its ceiling must not be handed more excess in a
+        # later redistribution pass and pushed back over it.
+        mix = {"BING": 1.0, "FACEBOOK": 0.0, "GOOGLE": 0.0, "PMAX": 0.0}
+        per_channel_max_share = {"BING": 0.05, "FACEBOOK": 0.9, "GOOGLE": 0.4, "PMAX": 0.4}
+        historical_mix = {"BING": 0.06, "FACEBOOK": 0.85, "GOOGLE": 0.03, "PMAX": 0.06}
+
+        capped = cap_channel_share_per_channel(mix, per_channel_max_share, historical_mix)
+
+        for channel, share in capped.items():
+            self.assertLessEqual(
+                share, per_channel_max_share[channel] + 1e-9, f"{channel} exceeded its cap"
+            )
+        self.assertAlmostEqual(sum(capped.values()), 1.0)
+
+    def test_leaves_mix_untouched_when_no_channel_exceeds_its_cap(self):
+        mix = {"A": 0.4, "B": 0.35, "C": 0.25}
+        capped = cap_channel_share_per_channel(
+            mix, {"A": 0.5, "B": 0.5, "C": 0.5}, historical_mix={}
+        )
+        self.assertEqual(capped, mix)
 
 
 def two_basin_objective(params, _):

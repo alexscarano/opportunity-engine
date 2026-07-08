@@ -507,6 +507,52 @@ def cap_channel_mix_share(mix, historical_mix, max_share):
     return capped
 
 
+def cap_channel_share_per_channel(mix, per_channel_max_share, historical_mix):
+    """Same redistribution algorithm as cap_channel_mix_share, generalized to
+    a distinct ceiling per channel instead of one shared max_share.
+
+    Needed because the SLSQP solve in optimize_spend_mix_for_budget only sees
+    a *clipped* simulated response past each channel's per-channel spend cap
+    (see _capped_channel_spend) -- the objective goes flat there, so nothing
+    stops the optimizer from still reporting an allocation past that cap for
+    a channel with no more gradient to follow. That nominal allocation then
+    leaks into the UI (e.g. the individual response-curve chart's "Recomendado"
+    line, drawn using this exact value, could land far to the right of where
+    the plotted curve itself was capped and stops). Capping the *reported* mix
+    here, not just the simulated response, keeps the two consistent."""
+    capped = dict(mix)
+    fixed = set()
+    for _ in range(len(capped)):
+        over = {
+            k
+            for k, v in capped.items()
+            if k not in fixed and v > per_channel_max_share.get(k, 1.0)
+        }
+        if not over:
+            break
+
+        excess = sum(capped[k] - per_channel_max_share[k] for k in over)
+        for k in over:
+            capped[k] = per_channel_max_share[k]
+            fixed.add(k)
+
+        under_keys = [k for k in capped if k not in fixed]
+        if not under_keys:
+            break
+
+        weights = {k: capped[k] for k in under_keys}
+        if sum(weights.values()) <= 0:
+            weights = {k: historical_mix.get(k, 0) for k in under_keys}
+        if sum(weights.values()) <= 0:
+            weights = {k: 1.0 for k in under_keys}
+
+        total_weight = sum(weights.values())
+        for k in under_keys:
+            capped[k] += excess * (weights[k] / total_weight)
+
+    return capped
+
+
 def generate_aggregated_response_curve(
     elasticity_results, config, optimized_mix=None, output_dir=None
 ):
@@ -624,7 +670,22 @@ def generate_aggregated_response_curve(
         # the same single-channel collapse cap_channel_mix_share already guards
         # against for the static strategic_mix. Apply it here too so the dynamic,
         # per-budget-level mix can't collapse to one channel either.
-        return cap_channel_mix_share(raw_mix, historical_mix, max_channel_mix_share)
+        #
+        # Combine that 40%-of-mix cap with each channel's own absolute-spend
+        # cap (as a fraction of this specific total_budget) into one ceiling
+        # per channel, whichever is tighter -- _capped_channel_spend already
+        # makes the simulated response flat past the absolute cap, but doesn't
+        # stop the optimizer from still *reporting* an allocation past it (see
+        # cap_channel_share_per_channel's docstring).
+        per_channel_max_share = {
+            col: min(
+                max_channel_mix_share,
+                (historical_max_daily_spend.get(col, 0) * per_channel_limit_factor)
+                / total_budget,
+            )
+            for col in active_spend_cols
+        }
+        return cap_channel_share_per_channel(raw_mix, per_channel_max_share, historical_mix)
 
     # --- NEW: Strategic Reallocation (Same Baseline Budget, Dynamically Optimized Elasticity Mix) ---
     reallocated_optimal_mix = optimize_spend_mix_for_budget(total_avg_daily_spend, previous_optimal_mix=historical_mix)
@@ -905,9 +966,14 @@ def generate_individual_response_curves(
         # Same reasoning as _capped_channel_spend in generate_aggregated_response_curve:
         # don't let a channel's individual curve chart extrapolate the Hill fit past
         # a range the model was actually calibrated against.
+        # However, if we have a recommended investment that exceeds the channel cap, we
+        # bypass the cap to show the curve up to the recommended point.
         channel_cap = historical_max_daily_spend.get(target_channel, 0) * per_channel_limit_factor
         if channel_cap > 0:
-            max_spend = min(max_spend, channel_cap)
+            if rec_spend is not None and rec_spend * 1.2 > channel_cap:
+                max_spend = rec_spend * 1.2
+            else:
+                max_spend = min(max_spend, channel_cap)
 
         spend_points = np.linspace(0, max_spend, 100)
 
