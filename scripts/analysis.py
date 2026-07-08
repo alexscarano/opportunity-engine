@@ -603,13 +603,19 @@ def _train_response_model(model_data, product_group, config):
             median_investment = 1
 
         max_adstocked_investment = adstocked_investment.max()
-        bounds = ([0.1, 0], [10, max_adstocked_investment * 1.5])
+        # Hill k capped at 1.0 (parity with elasticity_analysis.run_mmm_engine).
+        # k > 1 makes the response curve convex before its inflection -- marginal
+        # ROI *increasing* with spend -- which is impossible for media. On real
+        # data this path fit k=5.46 (accelerating returns), feeding both the
+        # opportunity projection and the causal model (which reuses these params).
+        # k <= 1 forces diminishing returns from the first dollar.
+        bounds = ([0.1, 0], [1.0, max_adstocked_investment * 1.5])
 
         popt, _ = curve_fit(
             hill_for_fit,
             adstocked_investment,
             incremental_kpi,
-            p0=[2, median_investment],
+            p0=[1.0, median_investment],
             bounds=bounds,
             maxfev=5000,
         )
