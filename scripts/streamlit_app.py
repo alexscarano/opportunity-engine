@@ -1241,6 +1241,51 @@ with tab1:
         update_user_api_key(st.session_state["user_id"], gemini_key)
         st.success("Configurações salvas com sucesso!")
 
+    if ai_suggest_btn:
+        if not inv_file or not perf_file:
+            st.error(
+                "Por favor, faça upload dos arquivos de Investimento e Performance para continuar."
+            )
+        elif not (gemini_key or os.environ.get("GEMINI_API_KEY")) or not gemini_model:
+            st.warning(
+                "Preencha a Chave de API do Gemini para usar a sugestão automática."
+            )
+        else:
+            with st.spinner("Analisando arquivos com IA..."):
+                try:
+                    active_key = gemini_key or os.environ.get("GEMINI_API_KEY")
+
+                    safe_adv_name = (
+                        advertiser_name.replace(" ", "_").replace("/", "").replace("\\", "")
+                    )
+                    dynamic_dir = os.path.join(
+                        "inputs",
+                        f"user_{st.session_state['user_id']}",
+                        f"{safe_adv_name}_dynamic",
+                    )
+                    os.makedirs(dynamic_dir, exist_ok=True)
+                    perf_path = os.path.join(dynamic_dir, "performance.csv")
+                    with open(perf_path, "wb") as f:
+                        f.write(perf_file.getbuffer())
+
+                    performance_sample = read_csv_robust(perf_path, nrows=5)
+
+                    import google.generativeai as genai
+
+                    genai.configure(api_key=active_key)
+                    model = genai.GenerativeModel(gemini_model)
+                    suggestion = suggest_form_fields(model, performance_sample)
+
+                    st.session_state["ai_suggested_kpi_column"] = suggestion["kpi_column"]
+                    st.session_state["ai_suggested_kpi_is_monetary"] = suggestion["kpi_is_monetary"]
+                    st.session_state["ai_suggested_optimization_target"] = suggestion["optimization_target"]
+                    st.rerun()
+                except Exception as e:
+                    st.warning(
+                        f"Não foi possível gerar sugestão automática: {e}. "
+                        "Mantendo os valores atuais."
+                    )
+
     if submit_btn:
         # Persist user's Gemini API Key in SQLite
         update_user_api_key(st.session_state["user_id"], gemini_key)
