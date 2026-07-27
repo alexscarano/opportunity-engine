@@ -36,38 +36,83 @@ def find_best_alpha(investment_series, kpi_series):
     return best_alpha, correlations[best_alpha]
 
 
+DATE_FORMAT_CANDIDATES = [
+    "%Y-%m-%d",
+    "%d/%m/%Y",
+    "%m/%d/%Y",
+    "%d-%m-%Y",
+    "%m-%d-%Y",
+    "%Y/%m/%d",
+    "%d.%m.%Y",
+]
+
+
 def robust_date_parsing(series, date_format=None):
     """
-    Attempt to parse dates using the provided format. If it fails or results in many NaTs,
-    fall back to pandas automatic date inference.
+    Parses a date column deterministically, testing whole-format candidates
+    against the WHOLE column instead of guessing row-by-row (dateutil's
+    per-row guessing silently inverts day/month for values where the day
+    happens to be <= 12, scrambling an otherwise-uniform column with zero
+    NaT to show for it).
+
+    The configured `date_format`, if given, wins immediately when it covers
+    100% of the non-null rows. Otherwise every candidate in
+    DATE_FORMAT_CANDIDATES is tried; the one format that parses 100% of the
+    non-null rows (0 NaT) is used. If two or more candidates tie at 100%
+    coverage, the column is genuinely ambiguous (e.g. every day-of-month is
+    <= 12) and a ValueError is raised instead of silently picking one. If no
+    candidate reaches 100% coverage, a ValueError is raised listing example
+    values that failed to parse.
     """
     original_non_nulls = series.notna().sum()
     if original_non_nulls == 0:
         return pd.to_datetime(series, errors="coerce")
+
+    column_name = series.name or "data"
 
     if date_format:
         parsed = pd.to_datetime(series, format=date_format, errors="coerce")
         if parsed.notna().sum() == original_non_nulls:
             return parsed
         print(
-            f"   - WARNING: Configured date format '{date_format}' failed for some rows. Falling back to auto-detection."
+            f"   - AVISO: Formato de data configurado '{date_format}' não cobriu 100% das linhas "
+            f"da coluna '{column_name}'. Tentando detecção automática de formato."
         )
 
-    # Fallback to general parsing if specific format fails
-    try:
-        # Attempt to let pandas infer the format
-        parsed = pd.to_datetime(series, errors="coerce")
+    matches = {}
+    best_fmt = None
+    best_count = -1
+    best_parsed = None
+    for fmt in DATE_FORMAT_CANDIDATES:
+        parsed = pd.to_datetime(series, format=fmt, errors="coerce")
+        count = parsed.notna().sum()
+        if count == original_non_nulls:
+            matches[fmt] = parsed
+        if count > best_count:
+            best_count = count
+            best_fmt = fmt
+            best_parsed = parsed
 
-        # If still failing, try with format='mixed' (Pandas 2.0+)
-        if parsed.notna().sum() < original_non_nulls:
-            try:
-                parsed = pd.to_datetime(series, format="mixed", errors="coerce")
-            except:
-                pass
-        return parsed
-    except Exception as e:
-        print(f"   - ERROR: Date parsing failed completely: {e}")
-        return pd.to_datetime(series, errors="coerce")
+    if len(matches) == 1:
+        return next(iter(matches.values()))
+
+    if len(matches) > 1:
+        examples = series.dropna().unique()[:3].tolist()
+        raise ValueError(
+            f"Não foi possível determinar o formato de data da coluna '{column_name}' de forma "
+            f"inequívoca: os formatos {list(matches.keys())} parseiam 100% das linhas mas produzem "
+            f"resultados divergentes. Exemplos de valores: {examples}. Configure 'date_formats' no "
+            f"config explicitamente para esta coluna para desambiguar."
+        )
+
+    failing_mask = series.notna() & best_parsed.isna()
+    examples = series[failing_mask].unique()[:3].tolist()
+    raise ValueError(
+        f"Não foi possível parsear a coluna de data '{column_name}': nenhum formato testado "
+        f"({DATE_FORMAT_CANDIDATES}) cobriu 100% das linhas. Melhor formato testado: '{best_fmt}' "
+        f"({best_count}/{original_non_nulls} linhas). Exemplos de valores que falharam: {examples}. "
+        f"Configure 'date_formats' no config explicitamente com o formato correto."
+    )
 
 
 COLUMN_NAME_HINTS = {

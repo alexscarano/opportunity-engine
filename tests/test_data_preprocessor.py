@@ -10,6 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "s
 from data_preprocessor import (
     COLUMN_NAME_HINTS,
     resolve_column,
+    robust_date_parsing,
     robust_numeric_parsing,
     read_csv_robust,
     load_and_prepare_data,
@@ -169,6 +170,98 @@ def test_robust_numeric_parsing_unparseable_value_logs_warning(capsys):
     assert "AVISO" in capsys.readouterr().out
 
 
+def test_robust_date_parsing_dayfirst_resolves_without_scrambling():
+    """Days > 12 in the column disambiguate %d/%m/%Y unambiguously -- the old
+    per-row dateutil fallback would have inverted day/month on whatever rows
+    happened to have day <= 12, while leaving day > 12 rows alone. Here every
+    row has day > 12, so a scrambled result would show up as a wrong month.
+    """
+    s = pd.Series(["13/01/2025", "14/02/2025", "15/03/2025", "28/06/2026"])
+    result = robust_date_parsing(s)
+    assert result.tolist() == [
+        pd.Timestamp("2025-01-13"),
+        pd.Timestamp("2025-02-14"),
+        pd.Timestamp("2025-03-15"),
+        pd.Timestamp("2026-06-28"),
+    ]
+
+
+def test_robust_date_parsing_monthfirst_resolves_when_second_token_exceeds_12():
+    """Month can never exceed 12, so a value like '01/13/2025' can only be
+    valid under %m/%d/%Y (month=01, day=13) -- %d/%m/%Y would require
+    month=13, which is invalid and forces that whole-column format to fail.
+    This is a genuinely discriminating case for month-first, not a tautology.
+    """
+    s = pd.Series(["01/13/2025", "02/14/2025", "03/15/2025"])
+    result = robust_date_parsing(s)
+    assert result.tolist() == [
+        pd.Timestamp("2025-01-13"),
+        pd.Timestamp("2025-02-14"),
+        pd.Timestamp("2025-03-15"),
+    ]
+
+
+def test_robust_date_parsing_ambiguous_column_raises_value_error():
+    """Every day-of-month is <= 12, so both %d/%m/%Y and %m/%d/%Y parse 100%
+    of the column but disagree on the actual dates -- must raise instead of
+    silently picking one.
+    """
+    s = pd.Series(["01/02/2025", "03/04/2025", "05/06/2025"], name="Date")
+    with pytest.raises(ValueError, match="Date"):
+        robust_date_parsing(s)
+
+
+def test_robust_date_parsing_iso_format_regression():
+    s = pd.Series(["2025-01-01", "2025-02-15", "2025-03-20"])
+    result = robust_date_parsing(s)
+    assert result.tolist() == [
+        pd.Timestamp("2025-01-01"),
+        pd.Timestamp("2025-02-15"),
+        pd.Timestamp("2025-03-20"),
+    ]
+
+
+def test_robust_date_parsing_configured_format_not_fully_covering_falls_through(capsys):
+    """Configured date_format is %Y-%m-%d but the actual data is dd/mm/yyyy --
+    must not be silently accepted partially, must fall through to
+    auto-detection and resolve correctly, and must print a warning.
+    """
+    s = pd.Series(["15/01/2025", "16/01/2025", "17/01/2025"])
+    result = robust_date_parsing(s, date_format="%Y-%m-%d")
+    assert result.tolist() == [
+        pd.Timestamp("2025-01-15"),
+        pd.Timestamp("2025-01-16"),
+        pd.Timestamp("2025-01-17"),
+    ]
+    assert "AVISO" in capsys.readouterr().out
+
+
+def test_robust_date_parsing_no_candidate_covers_all_raises_with_examples():
+    s = pd.Series(["not-a-date", "also-garbage", "2025-01-01"], name="Date")
+    with pytest.raises(ValueError, match="Date"):
+        robust_date_parsing(s)
+
+
+def test_robust_date_parsing_reproduces_weekly_investment_bug_scenario():
+    """Regression test for the original bug: a weekly dd/mm/yyyy investment
+    column (mostly Sundays, spanning two years) was silently scrambled by
+    the old per-row dateutil fallback whenever day <= 12 -- producing 0 NaT
+    but a max date pushed forward into the wrong month (2026-12-04 instead
+    of the true 2026-06-28). Regular 7-day spacing end-to-end proves no row
+    got its day/month inverted.
+    """
+    dates = pd.date_range(start="2025-01-01", periods=78, freq="7D")
+    s = pd.Series(dates.strftime("%d/%m/%Y"))
+
+    result = robust_date_parsing(s)
+
+    assert result.isna().sum() == 0
+    assert result.min() == dates.min()
+    assert result.max() == dates.max()
+    assert result.is_monotonic_increasing
+    assert (result.diff().dropna() == pd.Timedelta(days=7)).all()
+
+
 def test_read_csv_robust_default_comma(tmp_path):
     path = tmp_path / "plain.csv"
     path.write_text("Date,kpi\n2025-01-01,100\n", encoding="utf-8")
@@ -267,6 +360,12 @@ def test_load_and_prepare_data_normalizes_channel_case(tmp_path):
 
 
 def test_load_and_prepare_data_raises_clear_error_on_empty_result(tmp_path):
+    """An unparseable date value now fails fast inside robust_date_parsing
+    itself (ValueError naming the bad value), instead of silently coercing
+    to NaT and only surfacing later as a generic 'no rows left' error. The
+    earlier, more specific error is strictly more useful, so this test now
+    pins that message instead of the downstream empty-dataframe one.
+    """
     investment_path = _write_csv(
         tmp_path / "investment.csv",
         "dates,product_group,total_revenue\nnot-a-date,GOOGLE,100\n",
@@ -285,11 +384,14 @@ def test_load_and_prepare_data_raises_clear_error_on_empty_result(tmp_path):
         "treat_outliers": False,
     }
 
-    with pytest.raises(Exception, match="arquivo de investimento"):
+    with pytest.raises(Exception, match="not-a-date"):
         load_and_prepare_data(config)
 
 
 def test_load_and_prepare_data_raises_clear_error_on_empty_kpi_result(tmp_path):
+    """See test_load_and_prepare_data_raises_clear_error_on_empty_result above:
+    the unparseable date now fails inside robust_date_parsing before the
+    empty-dataframe check is ever reached."""
     investment_path = _write_csv(
         tmp_path / "investment.csv",
         "dates,product_group,total_revenue\n2025-01-01,GOOGLE,100\n",
@@ -308,7 +410,7 @@ def test_load_and_prepare_data_raises_clear_error_on_empty_kpi_result(tmp_path):
         "treat_outliers": False,
     }
 
-    with pytest.raises(Exception, match="arquivo de performance"):
+    with pytest.raises(Exception, match="not-a-date"):
         load_and_prepare_data(config)
 
 

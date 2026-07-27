@@ -1308,9 +1308,9 @@ with tab1:
                     "max_events_to_analyze": 3,
                     "treat_outliers": False,
                     "date_formats": {
-                        "investment_file": "%Y-%m-%d",
-                        "performance_file": "%Y-%m-%d",
-                        "generic_trends_file": "%Y-%m-%d",
+                        "investment_file": None,
+                        "performance_file": None,
+                        "generic_trends_file": None,
                     },
                     "column_mapping": {
                         "investment_file": {
