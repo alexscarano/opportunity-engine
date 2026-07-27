@@ -1282,7 +1282,16 @@ with tab1:
                     "financial_targets": {
                         "target_cpa": target_cpa if target_cpa > 0 else 999999,
                         "target_icpa": 999999,
-                        "target_roas": target_roas if target_roas > 0 else 0,
+                        # ROAS only makes sense when the KPI is money (kpi_is_monetary)
+                        # or the goal is REVENUE -- otherwise there's no
+                        # Projected_Revenue to compute ROAS against, so keep it
+                        # unset (0) even if the user typed a value in the field.
+                        "target_roas": (
+                            target_roas
+                            if target_roas > 0
+                            and (kpi_is_monetary or optimization_target == "REVENUE")
+                            else 0
+                        ),
                         "target_iroas": 0,
                     },
                     "optimization_target": optimization_target,

@@ -271,7 +271,16 @@ def run_causal_impact_analysis(
         event_channels = [ch.strip() for ch in product_group.split(",")]
         event_investment_series = model_data[event_channels].sum(axis=1)
 
-        # Use pre-trained model parameters
+        # Use pre-trained model parameters. An empty model_params means
+        # run_opportunity_projection failed to train the response model (see its
+        # own except block for the root cause) -- surface that explicitly instead
+        # of a bare KeyError: 'alpha'.
+        if not model_params or "alpha" not in model_params:
+            raise ValueError(
+                "modelo de projecao nao treinou (model_params vazio) -- analise "
+                "causal abortada. Verifique o log de run_opportunity_projection "
+                "para a causa raiz."
+            )
         best_alpha = model_params["alpha"]
         best_k = model_params["k"]
         best_s = model_params["s"]
@@ -923,8 +932,12 @@ def run_opportunity_projection(
                     & (valid_points_df["iCPA"] <= max_icpa)
                 ]
 
-        # Apply Revenue filters (if mode is REVENUE, KPI is monetary, or filters are explicitly set)
-        if revenue_mode or min_roas > 0 or min_iroas > 0:
+        # Apply Revenue filters -- only meaningful in revenue_mode, since ROAS needs
+        # Projected_Revenue, which is only computed above when revenue_mode is True.
+        # target_roas/target_iroas set while optimizing for CONVERSIONS on a
+        # non-monetary KPI are meaningless here; ignore them instead of crashing
+        # with a KeyError on the missing Projected_Revenue column.
+        if revenue_mode:
             if "ROAS" not in valid_points_df.columns:
                 # Total Revenue / Total Investment
                 valid_points_df["ROAS"] = (
@@ -938,6 +951,12 @@ def run_opportunity_projection(
                 valid_points_df = valid_points_df[
                     valid_points_df["Incremental_ROI"] >= min_iroas
                 ]
+        elif min_roas > 0 or min_iroas > 0:
+            print(
+                "   - AVISO (config): target_roas/target_iroas foram ignorados porque "
+                "o KPI nao e monetario e optimization_target != 'REVENUE' -- ROAS exige "
+                "Projected_Revenue, que so existe em modo receita."
+            )
 
         # Find the Strategic Limit: The maximum investment that satisfies all constraints
         if not valid_points_df.empty:
@@ -994,6 +1013,10 @@ def run_opportunity_projection(
         import traceback
 
         print(f"An error occurred in the sweet spot calculation: {e}")
+        print(
+            f"   - Config causadora da falha: optimization_target={optimization_target!r}, "
+            f"financial_targets={config.get('financial_targets', {})}"
+        )
         traceback.print_exc()
         return pd.DataFrame(), pd.DataFrame(), {}, {}, {}, {}, {}, {}, {}
 
