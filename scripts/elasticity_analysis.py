@@ -6,6 +6,7 @@ to determine the optimal budget allocation based on historical data.
 
 import argparse
 import json
+import logging
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import Ridge
@@ -18,10 +19,11 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import os
-import traceback
 import holidays
 
 import data_preprocessor
+
+log = logging.getLogger(__name__)
 
 
 def create_calendar_features(df, country_code="BR", period_days=1):
@@ -284,9 +286,7 @@ def run_mmm_engine(config):
     Stage 1: Models the organic baseline using context and calendar features.
     Stage 2: Models the residual KPI lift using marketing investment.
     """
-    print("=" * 50)
-    print("Starting Two-Stage Elasticity Analysis Engine...")
-    print("=" * 50)
+    log.info("Starting Two-Stage Elasticity Analysis Engine...")
 
     try:
         # Load and prepare data
@@ -319,8 +319,9 @@ def run_mmm_engine(config):
         df = df.fillna(0)
 
     except Exception as e:
-        print(
-            f"   - ERROR: Failed to prepare data for Elasticity analysis. Details: {e}"
+        log.error(
+            f"   - ERROR: Failed to prepare data for Elasticity analysis. Details: {e}",
+            exc_info=True,
         )
         return None
 
@@ -340,10 +341,10 @@ def run_mmm_engine(config):
     inactive_spend_cols = [col for col in spend_cols if df[col].mean() == 0]
 
     if not active_spend_cols:
-        print("   - ERROR: No marketing channels with active investment found.")
+        log.error("   - ERROR: No marketing channels with active investment found.")
         return None
 
-    print(f"   - Stage 1: Modeling Organic Baseline...")
+    log.info("   - Stage 1: Modeling Organic Baseline...")
     X_base = df[base_features]
     y_total = df[kpi_col]
 
@@ -369,7 +370,7 @@ def run_mmm_engine(config):
     # coefficients on non-negative features, so the total contribution stays >= 0.
     y_lift = y_total - df["kpi_organic_baseline"]
 
-    print(f"   - Stage 2: Optimizing Marketing Response on Incremental Lift...")
+    log.info("   - Stage 2: Optimizing Marketing Response on Incremental Lift...")
     # Optimization Setup
     bounds = (
         [(0.0, 0.9)] * len(active_spend_cols)
@@ -413,7 +414,7 @@ def run_mmm_engine(config):
     )
 
     if not result.success:
-        print(
+        log.warning(
             f"   - WARNING: Optimization did not converge fully. Details: {result.message}"
         )
 
@@ -444,10 +445,10 @@ def run_mmm_engine(config):
     # worse than its own mean on held-out days) -- treat the mix/ROAS below as
     # unreliable when that happens.
     _, cv_r2 = walk_forward_cv_score(transformed_mkt, y_lift)
-    print(f"   - Marketing Model R² (in-sample on lift): {final_r2:.4f}")
-    print(f"   - Marketing Model R² (walk-forward CV): {cv_r2:.4f}")
+    log.info(f"   - Marketing Model R² (in-sample on lift): {final_r2:.4f}")
+    log.info(f"   - Marketing Model R² (walk-forward CV): {cv_r2:.4f}")
     if cv_r2 <= 0:
-        print(
+        log.warning(
             "   - AVISO (baixa confianca): o modelo de marketing nao generaliza "
             "(R2 CV <= 0). A divisao de contribuicao e o mix recomendado abaixo "
             "tem confianca baixa -- ha pouco sinal de midia neste periodo."
@@ -475,7 +476,7 @@ def run_mmm_engine(config):
     if y_total.sum() > 0:
         measured_pct = total_marketing_contribution / y_total.sum()
         if measured_pct < min_marketing_pct:
-            print(
+            log.warning(
                 f"   - AVISO (sinal fraco): contribuicao de marketing medida em "
                 f"{measured_pct * 100:.1f}% do KPI (abaixo de {min_marketing_pct * 100:.0f}%). "
                 "Os numeros de ROAS/mix abaixo tem baixa confianca -- o modelo "
@@ -490,13 +491,13 @@ def run_mmm_engine(config):
     else:
         contribution_pct = {k: 0.0 for k in contributions.keys()}
 
-    print("\n   --- Historical Contribution Split (Elasticity) ---")
+    log.info("   --- Historical Contribution Split (Elasticity) ---")
     for channel, pct in sorted(
         contribution_pct.items(), key=lambda item: item[1], reverse=True
     ):
-        print(f"     - {channel}: {pct:.2f}%")
+        log.info(f"     - {channel}: {pct:.2f}%")
 
-    print(
+    log.info(
         f"   - Total Marketing Contribution: {total_marketing_contribution:,.2f} ({(total_marketing_contribution / y_total.sum()) * 100:.2f}% of Total)"
     )
 
@@ -822,7 +823,7 @@ def generate_aggregated_response_curve(
     avg_ticket = 1.0 if kpi_is_monetary else config.get("average_ticket", 0)
     revenue_mode = kpi_is_monetary or optimization_target == "REVENUE"
     if kpi_is_monetary and optimization_target == "CONVERSIONS":
-        print(
+        log.warning(
             "   - AVISO (config): optimization_target='CONVERSIONS' foi ignorado "
             "porque kpi_is_monetary=true (o KPI ja e R$), entao o modo receita/ROAS "
             "esta em uso. Se o KPI for uma contagem (leads/vendas em unidades, nao "
@@ -987,7 +988,7 @@ def generate_aggregated_response_curve(
     if output_dir:  # Only export if output_dir is provided
         csv_out_path = os.path.join(output_dir, "response_curve_data.csv")
         res_df.to_csv(csv_out_path, index=False)
-        print(f"   - Simulation data exported for UI: {csv_out_path}")
+        log.info(f"   - Simulation data exported for UI: {csv_out_path}")
 
         # Persist the confidence signal so the dashboard can surface it (the CSV
         # only carries the curve, not the model's out-of-sample quality). When
@@ -1107,7 +1108,7 @@ def generate_individual_response_curves(
     if output_dir:
         csv_out_path = os.path.join(output_dir, "individual_response_curves_data.csv")
         all_curves_df.to_csv(csv_out_path, index=False)
-        print(f"   - Individual simulation data exported for UI: {csv_out_path}")
+        log.info(f"   - Individual simulation data exported for UI: {csv_out_path}")
 
         # --- Plotting Logic (One per channel) ---
         for channel in active_spend_cols:
@@ -1157,7 +1158,7 @@ def generate_individual_response_curves(
             )
             plt.savefig(plot_out_path)
             plt.close()
-            print(f"   - Individual curve plot saved for {channel}: {plot_out_path}")
+            log.info(f"   - Individual curve plot saved for {channel}: {plot_out_path}")
 
     return all_curves_df
 

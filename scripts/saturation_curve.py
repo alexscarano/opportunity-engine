@@ -4,12 +4,14 @@ This module handles the generation of saturation curves at both the event-specif
 and global brand levels.
 """
 
+import logging
 import os
-import traceback
 import pandas as pd
 import analysis
 import presentation
 import data_preprocessor
+
+log = logging.getLogger(__name__)
 
 
 def generate_event_saturation_curves(
@@ -24,7 +26,7 @@ def generate_event_saturation_curves(
     Generates saturation curves for the specific product group(s) of a single event.
     This is called within the event loop and saves results to the event's directory.
     """
-    print(
+    log.info(
         f"   - Generating event-specific saturation curves for '{product_group_for_report}'..."
     )
 
@@ -148,12 +150,15 @@ def generate_event_saturation_curves(
         saturation_filepath = os.path.join(event_output_dir, "SATURATION_CURVE.md")
         with open(saturation_filepath, "w", encoding="utf-8") as f:
             f.write(final_markdown)
-        print(
+        log.info(
             f"   - Successfully generated event saturation analysis file at: {saturation_filepath}"
         )
 
     except Exception as e:
-        print(f"   - WARNING: Could not generate event saturation curve. Details: {e}")
+        log.warning(
+            f"   - WARNING: Could not generate event saturation curve. Details: {e}",
+            exc_info=True,
+        )
         return pd.DataFrame(), pd.DataFrame(), None, None, None, None, None, None, None
 
     return (
@@ -174,7 +179,7 @@ def run_global_saturation_analysis(config):
     Generates a comprehensive saturation analysis for all individual channels and the combined total,
     independent of event detection. Saves results to a dedicated global directory.
     """
-    print("\n" + "=" * 50 + "\nStarting Global Saturation Analysis...\n" + "=" * 50)
+    log.info("Starting Global Saturation Analysis...")
 
     try:
         kpi_df, daily_investment_df, trends_df, _ = (
@@ -200,12 +205,12 @@ def run_global_saturation_analysis(config):
         all_channels = [
             ch for ch in daily_investment_df["Product Group"].unique() if ch != "OTHER"
         ]
-        print(
+        log.info(
             f"   - Found {len(all_channels)} unique channels to analyze: {', '.join(all_channels)}"
         )
 
         if len(all_channels) > 1:
-            print("     - Analyzing combination of all channels...")
+            log.info("     - Analyzing combination of all channels...")
             try:
                 (
                     full_response_curve_df,
@@ -224,11 +229,11 @@ def run_global_saturation_analysis(config):
                     ", ".join(all_channels),
                     config,
                 )
-                print(
-                    f"   - DEBUG: full_response_curve_df empty: {full_response_curve_df.empty if full_response_curve_df is not None else True}"
+                log.debug(
+                    f"   - full_response_curve_df empty: {full_response_curve_df.empty if full_response_curve_df is not None else True}"
                 )
-                print(
-                    f"   - DEBUG: scenarios_df empty: {scenarios_df.empty if scenarios_df is not None else True}"
+                log.debug(
+                    f"   - scenarios_df empty: {scenarios_df.empty if scenarios_df is not None else True}"
                 )
 
                 if (
@@ -315,10 +320,10 @@ def run_global_saturation_analysis(config):
                     # --- End New Scenario ---
 
             except Exception as e:
-                print(
-                    f"   - WARNING: Could not generate combined saturation curve for all channels. Details: {e}"
+                log.warning(
+                    f"   - WARNING: Could not generate combined saturation curve for all channels. Details: {e}",
+                    exc_info=True,
                 )
-                traceback.print_exc()
 
         if all_scenarios:
             full_scenarios_df = pd.concat(all_scenarios, ignore_index=True)
@@ -476,12 +481,14 @@ Para cada cenário, a distribuição do investimento entre os canais é feita da
             saturation_filepath = os.path.join(output_dir, "SATURATION_CURVE.md")
             with open(saturation_filepath, "w", encoding="utf-8") as f:
                 f.write(markdown_content)
-            print(
+            log.info(
                 f"   - Successfully generated global saturation analysis file at: {saturation_filepath}"
             )
 
-        print("=" * 50 + "\nGlobal Saturation Analysis Complete.\n" + "=" * 50)
+        log.info("Global Saturation Analysis Complete.")
 
     except Exception as e:
-        print(f"A critical error occurred during the global saturation analysis: {e}")
-        traceback.print_exc()
+        log.error(
+            f"A critical error occurred during the global saturation analysis: {e}",
+            exc_info=True,
+        )

@@ -4,8 +4,11 @@ This module handles all data loading, validation, cleaning, and pre-processing.
 """
 
 import csv
+import logging
 import pandas as pd
 import numpy as np
+
+log = logging.getLogger(__name__)
 
 
 def treat_outliers(df, column):
@@ -74,7 +77,7 @@ def robust_date_parsing(series, date_format=None):
         parsed = pd.to_datetime(series, format=date_format, errors="coerce")
         if parsed.notna().sum() == original_non_nulls:
             return parsed
-        print(
+        log.warning(
             f"   - AVISO: Formato de data configurado '{date_format}' não cobriu 100% das linhas "
             f"da coluna '{column_name}'. Tentando detecção automática de formato."
         )
@@ -205,7 +208,7 @@ def drop_partial_periods(df, date_col, cadence):
             stub_dates.append(date)
 
     if not stub_dates:
-        print(
+        log.debug(
             f"   - Nenhum período parcial encontrado (cadência={cadence} dia(s), "
             f"limiar={threshold:.1f} dia(s))."
         )
@@ -215,7 +218,7 @@ def drop_partial_periods(df, date_col, cadence):
     dropped_str = ", ".join(
         pd.Timestamp(d).strftime("%d/%m/%Y") for d in sorted(stub_dates)
     )
-    print(
+    log.info(
         f"   - Períodos parciais descartados: {int(mask.sum())} linha(s) em "
         f"{len(stub_dates)} data(s) (distância < {threshold:.1f} dia(s)): {dropped_str}"
     )
@@ -291,7 +294,7 @@ def resolve_column(df, configured_name, hint_key, description):
     hints = COLUMN_NAME_HINTS.get(hint_key, [])
     candidates = [col for col in df.columns if col.strip().lower() in hints]
     if len(candidates) == 1:
-        print(
+        log.warning(
             f"   - AVISO: Coluna configurada '{configured_name}' ({description}) não encontrada. "
             f"Usando '{candidates[0]}' (detectada automaticamente pelo nome)."
         )
@@ -388,7 +391,7 @@ def robust_numeric_parsing(series, column_name="valor"):
     number_format, confident = _detect_number_format(non_null_values.tolist())
     if not confident and len(non_null_values) > 0:
         examples = non_null_values.unique()[:5].tolist()
-        print(
+        log.warning(
             f"   - AVISO: Formato numérico da coluna '{column_name}' ambíguo, assumindo padrão "
             f"US (',' milhar / '.' decimal). Exemplos: {examples}"
         )
@@ -405,7 +408,7 @@ def robust_numeric_parsing(series, column_name="valor"):
     failed = result.isna() & ~is_null_token & text.notna()
     if failed.sum() > 0:
         examples = series[failed].unique()[:5].tolist()
-        print(
+        log.warning(
             f"   - AVISO: {int(failed.sum())} valor(es) da coluna '{column_name}' não puderam ser "
             f"convertidos para número. Exemplos: {examples}"
         )
@@ -426,7 +429,9 @@ def read_csv_robust(path, **kwargs):
         with open(path, "r", encoding="latin-1") as f:
             sample = f.read(8192)
         encoding = "latin-1"
-        print(f"   - AVISO: Encoding não-UTF-8 detectado em '{path}'. Usando 'latin-1'.")
+        log.warning(
+            f"   - AVISO: Encoding não-UTF-8 detectado em '{path}'. Usando 'latin-1'."
+        )
 
     try:
         delimiter = csv.Sniffer().sniff(sample, delimiters=",;\t").delimiter
@@ -434,7 +439,9 @@ def read_csv_robust(path, **kwargs):
         delimiter = ","
 
     if delimiter != ",":
-        print(f"   - AVISO: Delimitador '{delimiter}' detectado em '{path}' (não é vírgula).")
+        log.warning(
+            f"   - AVISO: Delimitador '{delimiter}' detectado em '{path}' (não é vírgula)."
+        )
 
     df = pd.read_csv(path, encoding=encoding, sep=delimiter, **kwargs)
     df.columns = df.columns.str.strip()
@@ -521,7 +528,7 @@ def guess_investment_col(file_path):
         fallback = df.columns[-1]
         numeric_cols = _numeric_looking_columns(df, exclude_hints=COLUMN_NAME_HINTS["date"])
         if numeric_cols and fallback not in numeric_cols:
-            print(
+            log.warning(
                 f"   - AVISO: Coluna de investimento não configurada; o palpite posicional "
                 f"'{fallback}' não parece numérico. Usando '{numeric_cols[0]}' (candidata "
                 f"numérica mais limpa) automaticamente."
@@ -564,7 +571,7 @@ def guess_kpi_col(file_path, user_kpi):
         fallback = df.columns[1] if len(df.columns) > 1 else df.columns[0]
         numeric_cols = _numeric_looking_columns(df, exclude_hints=COLUMN_NAME_HINTS["date"])
         if numeric_cols and fallback not in numeric_cols:
-            print(
+            log.warning(
                 f"   - AVISO: Coluna de KPI não configurada; o palpite posicional "
                 f"'{fallback}' não parece numérico. Usando '{numeric_cols[0]}' (candidata "
                 f"numérica mais limpa) automaticamente."
@@ -579,7 +586,7 @@ def load_and_prepare_data(config):
     """
     Loads and prepares the KPI, investment, and trends data based on the config.
     """
-    print("\n" + "=" * 50 + "\nLoading, Cleaning, and Preparing Data...\n" + "=" * 50)
+    log.info("Loading, Cleaning, and Preparing Data...")
 
     try:
         # --- Get Column Mappings from Config ---
@@ -626,7 +633,7 @@ def load_and_prepare_data(config):
                     .reset_index(drop=True)
                 )
             except FileNotFoundError:
-                print(
+                log.warning(
                     "   - WARNING: Generic trends file not found. Continuing without trends data."
                 )
                 trends_df = pd.DataFrame(
@@ -636,7 +643,7 @@ def load_and_prepare_data(config):
                     }
                 )
         else:
-            print(
+            log.info(
                 "   - INFO: No generic trends file path provided. Continuing without trends data."
             )
             trends_df = pd.DataFrame(
@@ -763,7 +770,7 @@ def load_and_prepare_data(config):
         # investment_pivot/trends_df on "Date" silently fanning out rows.
         if kpi_df["Date"].duplicated().any():
             n_dupe_rows = int(kpi_df["Date"].duplicated().sum())
-            print(
+            log.warning(
                 f"   - AVISO: {n_dupe_rows} linha(s) com data duplicada encontrada(s) no arquivo "
                 f"de performance (provável detalhamento por canal). Somando os valores de KPI "
                 f"por data antes de prosseguir."
@@ -800,7 +807,7 @@ def load_and_prepare_data(config):
         cadence_label = {1: "diária", 7: "semanal", 30: "mensal"}.get(
             inv_cadence, "não-canônica"
         )
-        print(
+        log.info(
             f"   - Cadência detectada: {cadence_label} ({inv_cadence} dia(s)), "
             f"{n_inv_after} período(s) de investimento "
             f"({n_inv_before - n_inv_after} parcial(is) descartado(s)), "
@@ -811,7 +818,7 @@ def load_and_prepare_data(config):
         # --- Conditional Outlier Treatment ---
         outlier_config = config.get("treat_outliers", False)
         if outlier_config:
-            print("   - Applying outlier treatment...")
+            log.info("   - Applying outlier treatment...")
             if isinstance(outlier_config, list):
                 # Treat specific columns listed in config
                 for col in outlier_config:
@@ -821,20 +828,18 @@ def load_and_prepare_data(config):
                     )
                     if target_col in kpi_df.columns:
                         kpi_df = treat_outliers(kpi_df, target_col)
-                        print(f"     - Treated outliers in KPI column: '{col}'")
+                        log.info(f"     - Treated outliers in KPI column: '{col}'")
             elif isinstance(outlier_config, bool) and outlier_config:
                 # Default to treating the KPI column
                 kpi_df = treat_outliers(kpi_df, "kpi")
-                print(f"     - Treated outliers in KPI column: 'kpi'")
+                log.info("     - Treated outliers in KPI column: 'kpi'")
 
-        # --- Debug: Print Date Ranges ---
-        print(
+        log.info(
             f"   - KPI Data Date Range: {kpi_df['Date'].min()} to {kpi_df['Date'].max()}"
         )
-        print(
+        log.info(
             f"   - Investment Data Date Range: {daily_investment_df['Date'].min()} to {daily_investment_df['Date'].max()}"
         )
-        # --- End Debug ---
 
         kpi_df = kpi_df[["Date", "kpi"]].sort_values(by="Date").reset_index(drop=True)
         daily_investment_df = (
@@ -843,12 +848,12 @@ def load_and_prepare_data(config):
             .reset_index(drop=True)
         )
 
-        print("   - Data loaded and columns renamed successfully.")
+        log.info("   - Data loaded and columns renamed successfully.")
 
         kpi_col = "kpi"
 
         # --- Adstock Transformation ---
-        print(
+        log.info(
             "   - Checking for negative correlations and applying adstock where needed..."
         )
         investment_pivot = daily_investment_df.pivot_table(
@@ -860,7 +865,7 @@ def load_and_prepare_data(config):
 
         for column in investment_pivot.columns:
             if column in correlation_matrix and correlation_matrix[column][kpi_col] < 0:
-                print(
+                log.info(
                     f"     - Applying adstock to '{column}' due to negative correlation."
                 )
                 best_alpha, _ = find_best_alpha(
@@ -875,7 +880,7 @@ def load_and_prepare_data(config):
                     best_alpha,
                 )
 
-        print("   - Data preparation complete.")
+        log.info("   - Data preparation complete.")
 
         # --- Final Correlation Matrix (for display) ---
         final_pivot = daily_investment_df.pivot_table(
@@ -885,13 +890,8 @@ def load_and_prepare_data(config):
         if not trends_df.empty:
             final_merged = pd.merge(final_merged, trends_df, on="Date", how="left")
         correlation_matrix = final_merged.corr(numeric_only=True)
-        print(
-            "\n"
-            + "=" * 50
-            + "\nFinal Correlation Matrix (Post-Processing)\n"
-            + "=" * 50
-        )
-        print(correlation_matrix)
+        log.info("Final Correlation Matrix (Post-Processing)")
+        log.info("%s", correlation_matrix)
 
         return kpi_df, daily_investment_df, trends_df, correlation_matrix
 

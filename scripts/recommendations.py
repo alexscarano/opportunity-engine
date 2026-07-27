@@ -4,11 +4,13 @@ This module generates recommendation outputs, including budget scenarios
 and strategic markdown files.
 """
 
+import logging
 import os
-import traceback
 from presentation import format_number
 import pandas as pd
 import presentation
+
+log = logging.getLogger(__name__)
 
 # --- Budget Scenario Generation ---
 
@@ -122,11 +124,12 @@ def generate_basic_recommendations_file(results_data, config, output_dir):
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(content)
 
-        print(
+        log.info(
             f"   - Successfully generated basic recommendations file at: {output_path}"
         )
 
     except Exception as e:
-        print(
-            f"   - ERROR: Could not generate basic recommendations file. Details: {e}"
+        log.error(
+            f"   - ERROR: Could not generate basic recommendations file. Details: {e}",
+            exc_info=True,
         )

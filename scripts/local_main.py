@@ -15,7 +15,7 @@ import warnings
 
 warnings.filterwarnings("ignore")
 import json
-import traceback
+import logging
 import pandas as pd
 from datetime import timedelta
 from dotenv import load_dotenv
@@ -45,6 +45,7 @@ from presentation import (
 
 import data_preprocessor
 
+log = logging.getLogger(__name__)
 
 
 def main(config, args):
@@ -108,7 +109,7 @@ def main(config, args):
         )
 
         if event_map_df is None or event_map_df.empty:
-            print("\nAnalysis complete: No significant events were detected.")
+            log.warning("Analysis complete: No significant events were detected.")
 
         else:
             product_filter = config.get("product_group_filter")
@@ -120,8 +121,8 @@ def main(config, args):
                 filtered_events_df = event_map_df.copy()
 
             if filtered_events_df.empty:
-                print(
-                    f"\nAnalysis complete: No events found for the specified products."
+                log.warning(
+                    "Analysis complete: No events found for the specified products."
                 )
 
             else:
@@ -151,17 +152,12 @@ def main(config, args):
                     ]
 
                 if candidate_events_df.empty:
-                    print(
-                        f"\nAnalysis complete: No events found after the specified min_intervention_date."
+                    log.warning(
+                        "Analysis complete: No events found after the specified min_intervention_date."
                     )
 
                 else:
-                    print(
-                        f"\n"
-                        + "=" * 50
-                        + f"\nAnalyzing {len(candidate_events_df)} candidates...\n"
-                        + "=" * 50
-                    )
+                    log.info(f"Analyzing {len(candidate_events_df)} candidates...")
                     analyzed_events = []
 
                     # Pre-train the response model on the entire dataset for all event product groups
@@ -191,10 +187,9 @@ def main(config, args):
                         ]
                         post_period = [event["intervention_date"], event["end_date"]]
 
-                        print(
-                            f"\n"
-                            + "-" * 50
-                            + f"\n▶ Analyzing Event [{event_num}/{total_candidates}]: {event['product_group']} on {event['intervention_date']}"
+                        log.info(
+                            f"▶ Analyzing Event [{event_num}/{total_candidates}]: "
+                            f"{event['product_group']} on {event['intervention_date']}"
                         )
 
                         (
@@ -217,7 +212,7 @@ def main(config, args):
                         )
 
                         if not results_data:
-                            print(
+                            log.warning(
                                 "   - FAILED: Causal impact analysis could not be completed."
                             )
                             continue
@@ -240,7 +235,7 @@ def main(config, args):
                         ) if config.get("require_model_fit", True) else True
 
                         if is_significant and is_logical and has_good_fit:
-                            print(
+                            log.info(
                                 f"   - PASSED: Event is statistically significant, logical, and has a good model fit (R² >= {r_squared_threshold})."
                             )
                             analyzed_events.append(
@@ -254,25 +249,25 @@ def main(config, args):
                                 }
                             )
                         else:
-                            print(
+                            log.warning(
                                 "   - SKIPPED: Event did not meet validation criteria."
                             )
                             if not is_significant:
-                                print(
+                                log.warning(
                                     f"     - Reason: p-value ({results_data.get('p_value', 999):.4f}) is not below threshold ({config['p_value_threshold']})."
                                 )
                             if not is_logical:
-                                print(
+                                log.warning(
                                     f"     - Reason: Investment change ({results_data.get('investment_change_pct', 0):.2f}%) and lift direction ({results_data.get('absolute_lift', 0):.2f}) are not logical."
                                 )
                             if not has_good_fit:
-                                print(
+                                log.warning(
                                     f"     - Reason: Model R-squared ({results_data.get('model_r_squared', 0):.4f}) is below the {r_squared_threshold} threshold."
                                 )
 
                     if not analyzed_events:
-                        print(
-                            "\nAnalysis complete: No valid, impactful events were found."
+                        log.warning(
+                            "Analysis complete: No valid, impactful events were found."
                         )
 
                     else:
@@ -284,11 +279,8 @@ def main(config, args):
                             : config.get("max_events_to_analyze", 5)
                         ]
 
-                        print(
-                            f"\n"
-                            + "=" * 50
-                            + f"\nTop {len(top_events_to_report)} Events Selected. Generating Reports...\n"
-                            + "=" * 50
+                        log.info(
+                            f"Top {len(top_events_to_report)} Events Selected. Generating Reports..."
                         )
 
                         successful_events = []
@@ -307,10 +299,9 @@ def main(config, args):
                             results_data = analyzed_event["results_data"]
                             product_group_for_report = event["product_group"]
 
-                            print(
-                                f"\n"
-                                + "-" * 50
-                                + f"\nGenerating Report for Event: {product_group_for_report} on {event['intervention_date']}"
+                            log.info(
+                                f"Generating Report for Event: {product_group_for_report} "
+                                f"on {event['intervention_date']}"
                             )
 
                             event_output_dir = os.path.join(
@@ -399,7 +390,7 @@ def main(config, args):
                                 presentation_df.to_csv(
                                     csv_filename, index=False, float_format="%.2f"
                                 )
-                                print(
+                                log.info(
                                     f"   SUCCESS! Comprehensive data saved to: {csv_filename}"
                                 )
 
@@ -408,8 +399,8 @@ def main(config, args):
                                     f"gemini_report_{file_base_name}.html",
                                 )
 
-                                print(
-                                    f"   - Generating Strategic Narrative with Gemini..."
+                                log.info(
+                                    "   - Generating Strategic Narrative with Gemini..."
                                 )
                                 try:
                                     generate_html_report(
@@ -424,32 +415,33 @@ def main(config, args):
                                         correlation_matrix=correlation_matrix,
                                     )
                                     successful_events.append(event_output_dir)
-                                    print(
+                                    log.info(
                                         f"   SUCCESS! View the Gemini HTML report here: {html_report_filename}"
                                     )
                                 except Exception as e:
-                                    print(
-                                        f"   - ERROR: Could not generate or parse the narrative from Gemini. Details: {e}"
+                                    log.error(
+                                        f"   - ERROR: Could not generate or parse the narrative from Gemini. Details: {e}",
+                                        exc_info=True,
                                     )
 
                             except Exception as e:
-                                print(f"Report generation failed for this event: {e}")
-                                traceback.print_exc()
+                                log.error(
+                                    f"Report generation failed for this event: {e}",
+                                    exc_info=True,
+                                )
                                 continue
 
                         if successful_events:
-                            print(
-                                "\n\n" + "=" * 50 + "\nAll tasks complete.\n" + "=" * 50
-                            )
+                            log.info("All tasks complete.")
                             for path in successful_events:
-                                print(f"   - {path}")
+                                log.info(f"   - {path}")
                         else:
-                            print(
-                                "\n\nAnalysis complete: No events met all criteria for reporting."
+                            log.warning(
+                                "Analysis complete: No events met all criteria for reporting."
                             )
 
         # --- New Global Analysis Workflow using Elasticity Model ---
-        print("\n" + "=" * 50 + "\nStarting Global Elasticity Analysis...\n" + "=" * 50)
+        log.info("Starting Global Elasticity Analysis...")
 
         mmm_results = mmm_analysis.run_mmm_engine(config)
 
@@ -639,7 +631,7 @@ def main(config, args):
             )
 
             # --- Generate Global Gemini Report ---
-            print("   - Generating Global Strategic Narrative with Gemini...")
+            log.info("   - Generating Global Strategic Narrative with Gemini...")
             try:
                 generate_global_gemini_report(
                     gemini_client,
@@ -648,30 +640,35 @@ def main(config, args):
                     total_investment=total_monthly_investment,
                     kpi_projections=kpi_projections,
                 )
-                print(f"   SUCCESS! Global strategic analysis complete.")
+                log.info("   SUCCESS! Global strategic analysis complete.")
             except Exception as e:
-                print(
-                    f"   - ERROR: Could not generate or parse the global narrative from Gemini. Details: {e}"
+                log.error(
+                    f"   - ERROR: Could not generate or parse the global narrative from Gemini. Details: {e}",
+                    exc_info=True,
                 )
 
         else:
-            print(
+            log.error(
                 "   - ERROR: Global MMM analysis failed. Skipping global report generation."
             )
 
     except FileNotFoundError as e:
-        print(
+        log.critical(
             f"ERROR: Input file not found. Please check the path in your config file. Details: {e}"
         )
         exit(1)
 
     except ValueError as e:
-        print(f"ERROR: A data validation or processing error occurred. Details: {e}")
+        log.critical(
+            f"ERROR: A data validation or processing error occurred. Details: {e}"
+        )
         exit(1)
 
     except Exception as e:
-        print(f"A critical, unexpected error occurred during the main process: {e}")
-        traceback.print_exc()
+        log.critical(
+            f"A critical, unexpected error occurred during the main process: {e}",
+            exc_info=True,
+        )
         exit(1)
 
 
@@ -699,10 +696,10 @@ if __name__ == "__main__":
             with open(args.config, "r") as f:
                 config = json.load(f)
         except FileNotFoundError:
-            print(f"ERROR: Configuration file not found at '{args.config}'")
+            log.critical(f"ERROR: Configuration file not found at '{args.config}'")
             exit(1)
         except json.JSONDecodeError:
-            print(
+            log.critical(
                 f"ERROR: Could not decode JSON from the configuration file '{args.config}'. Please check for syntax errors."
             )
             exit(1)

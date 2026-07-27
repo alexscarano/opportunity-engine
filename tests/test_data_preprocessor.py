@@ -2,6 +2,8 @@
 import sys
 import os
 
+import logging
+
 import pandas as pd
 import pytest
 
@@ -84,11 +86,11 @@ def test_resolve_column_tolerant_match():
     assert resolve_column(df, "data", "date", "coluna de data") == " Data "
 
 
-def test_resolve_column_hint_fallback_single_candidate(capsys):
+def test_resolve_column_hint_fallback_single_candidate(caplog):
     df = pd.DataFrame({"Valor": [1], "Outra": [2]})
     result = resolve_column(df, "investment", "investment", "coluna de investimento")
     assert result == "Valor"
-    assert "AVISO" in capsys.readouterr().out
+    assert "AVISO" in caplog.text
 
 
 def test_resolve_column_hint_fallback_ambiguous_raises():
@@ -160,26 +162,26 @@ def test_robust_numeric_parsing_real_nan_cells_become_nan():
     assert result.iloc[2] == 34816.26
 
 
-def test_robust_numeric_parsing_plain_integers_no_ambiguity_warning(capsys):
+def test_robust_numeric_parsing_plain_integers_no_ambiguity_warning(caplog):
     s = pd.Series(["2122", "3438", "2317"])
     result = robust_numeric_parsing(s)
     assert result.tolist() == [2122, 3438, 2317]
-    assert "AVISO" not in capsys.readouterr().out
+    assert "AVISO" not in caplog.text
 
 
-def test_robust_numeric_parsing_ambiguous_defaults_to_us_with_warning(capsys):
+def test_robust_numeric_parsing_ambiguous_defaults_to_us_with_warning(caplog):
     s = pd.Series(["1.234"])
     result = robust_numeric_parsing(s)
     assert result.tolist() == [1.234]
-    assert "AVISO" in capsys.readouterr().out
+    assert "AVISO" in caplog.text
 
 
-def test_robust_numeric_parsing_unparseable_value_logs_warning(capsys):
+def test_robust_numeric_parsing_unparseable_value_logs_warning(caplog):
     s = pd.Series(["abc", "100,50"])
     result = robust_numeric_parsing(s)
     assert result.iloc[0] != result.iloc[0]  # NaN
     assert result.iloc[1] == 100.5
-    assert "AVISO" in capsys.readouterr().out
+    assert "AVISO" in caplog.text
 
 
 def test_robust_date_parsing_dayfirst_resolves_without_scrambling():
@@ -233,7 +235,7 @@ def test_robust_date_parsing_iso_format_regression():
     ]
 
 
-def test_robust_date_parsing_configured_format_not_fully_covering_falls_through(capsys):
+def test_robust_date_parsing_configured_format_not_fully_covering_falls_through(caplog):
     """Configured date_format is %Y-%m-%d but the actual data is dd/mm/yyyy --
     must not be silently accepted partially, must fall through to
     auto-detection and resolve correctly, and must print a warning.
@@ -245,7 +247,7 @@ def test_robust_date_parsing_configured_format_not_fully_covering_falls_through(
         pd.Timestamp("2025-01-16"),
         pd.Timestamp("2025-01-17"),
     ]
-    assert "AVISO" in capsys.readouterr().out
+    assert "AVISO" in caplog.text
 
 
 def test_robust_date_parsing_no_candidate_covers_all_raises_with_examples():
@@ -605,7 +607,7 @@ def test_guess_investment_col_falls_back_to_original_guess_when_nothing_numeric(
     assert guess_investment_col(path) == "Canal"
 
 
-def test_guess_kpi_col_numeric_fallback_logs_aviso_on_override(tmp_path, capsys):
+def test_guess_kpi_col_numeric_fallback_logs_aviso_on_override(tmp_path, caplog):
     """When the numeric-aware fallback picks a different column than the
     naive positional guess would have, an AVISO must be printed -- this
     feeds the generated config with no visible user-confirmation step.
@@ -615,16 +617,16 @@ def test_guess_kpi_col_numeric_fallback_logs_aviso_on_override(tmp_path, capsys)
         "Data;Canal;Metric\n01/01/2025;Pmax;1242\n05/01/2025;Pmax;2275\n12/01/2025;Pmax;2423\n",
     )
     guess_kpi_col(path, "Conversions")
-    assert "AVISO" in capsys.readouterr().out
+    assert "AVISO" in caplog.text
 
 
-def test_guess_investment_col_numeric_fallback_logs_aviso_on_override(tmp_path, capsys):
+def test_guess_investment_col_numeric_fallback_logs_aviso_on_override(tmp_path, caplog):
     path = _write_csv(
         tmp_path / "investment.csv",
         "Data;Metric;Canal\n01/01/2025;1242;Pmax\n05/01/2025;2275;Pmax\n12/01/2025;2423;Pmax\n",
     )
     guess_investment_col(path)
-    assert "AVISO" in capsys.readouterr().out
+    assert "AVISO" in caplog.text
 
 
 def test_guess_kpi_col_numeric_fallback_prefers_cleanest_candidate(tmp_path):
@@ -771,13 +773,14 @@ def test_drop_partial_periods_clean_series_drops_nothing():
     assert result["Date"].tolist() == dates.tolist()
 
 
-def test_drop_partial_periods_logs_dropped_dates(capsys):
+def test_drop_partial_periods_logs_dropped_dates(caplog):
+    caplog.set_level(logging.INFO)
     dates = pd.to_datetime(["2025-01-01", "2025-01-08", "2025-01-15", "2025-01-17"])
     df = pd.DataFrame({"Date": dates})
 
     drop_partial_periods(df, "Date", cadence=7)
 
-    out = capsys.readouterr().out
+    out = caplog.text
     assert "17/01/2025" in out
     assert "1 linha(s)" in out
 
@@ -966,7 +969,7 @@ def test_load_and_prepare_data_unexpected_error_preserves_original_cause(tmp_pat
 # --- Performance-file duplicate-date aggregation (channel breakdown) ---
 
 
-def test_load_and_prepare_data_dedups_duplicate_performance_dates_with_warning(tmp_path, capsys):
+def test_load_and_prepare_data_dedups_duplicate_performance_dates_with_warning(tmp_path, caplog):
     """Simulates a per-channel breakdown in the performance file (two rows
     for the same date). Must print an AVISO and sum the KPI values per date
     explicitly, instead of leaving the later merge with investment_pivot to
@@ -997,14 +1000,14 @@ def test_load_and_prepare_data_dedups_duplicate_performance_dates_with_warning(t
 
     kpi_df, daily_investment_df, _, _ = load_and_prepare_data(config)
 
-    assert "AVISO" in capsys.readouterr().out
+    assert "AVISO" in caplog.text
     assert len(kpi_df) == 3
     row = kpi_df[kpi_df["Date"] == pd.Timestamp("2025-01-01")]
     assert row["kpi"].iloc[0] == 15.0
     assert len(daily_investment_df) == 3
 
 
-def test_load_and_prepare_data_no_duplicate_dates_is_noop(tmp_path, capsys):
+def test_load_and_prepare_data_no_duplicate_dates_is_noop(tmp_path, caplog):
     investment_path = _write_csv(
         tmp_path / "investment.csv",
         "dates,product_group,total_revenue\n"
@@ -1027,6 +1030,6 @@ def test_load_and_prepare_data_no_duplicate_dates_is_noop(tmp_path, capsys):
 
     kpi_df, _, _, _ = load_and_prepare_data(config)
 
-    out = capsys.readouterr().out
+    out = caplog.text
     assert "data duplicada" not in out
     assert kpi_df["kpi"].tolist() == [10.0, 20.0, 30.0]

@@ -8,10 +8,13 @@ aligned with the Total Opportunity framework.
 
 import base64
 import json
+import logging
 import os
 import html
 import pandas as pd
 from presentation import format_number
+
+log = logging.getLogger(__name__)
 
 # ponytail: sem isso o google-api-core faz retry com backoff exponencial em 503
 # ("model experiencing high demand") por até ~10 min POR chamada, sem imprimir
@@ -27,12 +30,12 @@ def _get_image_as_base64(path):
         with open(path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode("utf-8")
     except FileNotFoundError:
-        print(
+        log.warning(
             f"   - WARNING: Image file not found at {path}. It will be omitted from the HTML report."
         )
         return None
     except Exception as e:
-        print(f"   - WARNING: Could not read image file at {path}. Error: {e}")
+        log.warning(f"   - WARNING: Could not read image file at {path}. Error: {e}")
         return None
 
 
@@ -50,7 +53,7 @@ def _generate_full_report_narrative(
     if gemini_client is None:
         raise ValueError("Gemini client is not authenticated (API key missing or invalid).")
 
-    print("   - Generating full strategic narrative with Gemini...")
+    log.info("   - Generating full strategic narrative with Gemini...")
 
     # --- 1. Prepare all data for the prompt ---
     avg_ticket = config.get("average_ticket", config.get("average_ticket_value", 0))
@@ -190,7 +193,7 @@ A matriz de correlação entre o investimento diário total e os KPIs de negóci
             response.text.strip().replace("```json\n", "").replace("\n```", "")
         )
         narrative = json.loads(cleaned_response_text)
-        print("   - Full narrative generated and parsed successfully.")
+        log.info("   - Full narrative generated and parsed successfully.")
         return narrative
     except Exception as e:
         # Devolver o schema com placeholders fazia o HTML/JSON serem gravados e o
@@ -207,7 +210,7 @@ def generate_markdown_report_from_narrative(
     """
     Generates a clean, causal-impact focused RECOMMENDATIONS.md from the Gemini narrative.
     """
-    print(f"   - Generating Markdown report to '{output_filename}'...")
+    log.info(f"   - Generating Markdown report to '{output_filename}'...")
 
     report_title = narrative.get(
         "report_title", "Recomendações de Investimento e Impacto Causal"
@@ -282,9 +285,12 @@ def generate_markdown_report_from_narrative(
     try:
         with open(output_filename, "w", encoding="utf-8") as f:
             f.write(md_content)
-        print("   - Markdown report generated successfully.")
+        log.info("   - Markdown report generated successfully.")
     except Exception as e:
-        print(f"   - ERROR: Could not write Markdown report to file. Details: {e}")
+        log.error(
+            f"   - ERROR: Could not write Markdown report to file. Details: {e}",
+            exc_info=True,
+        )
 
 
 def generate_html_report(
@@ -301,7 +307,7 @@ def generate_html_report(
     """
     Generates a self-contained HTML report using the AI-generated narrative for event impact.
     """
-    print(f"   - Assembling Gemini HTML report to '{output_filename}'...")
+    log.info(f"   - Assembling Gemini HTML report to '{output_filename}'...")
 
     # --- 1. Image Embedding ---
     image_b64s = {
@@ -495,9 +501,12 @@ def generate_html_report(
     try:
         with open(output_filename, "w", encoding="utf-8") as f:
             f.write(html_template)
-        print(f"   - Gemini HTML report saved successfully.")
+        log.info("   - Gemini HTML report saved successfully.")
     except Exception as e:
-        print(f"   - ERROR: Could not write HTML report to file. Details: {e}")
+        log.error(
+            f"   - ERROR: Could not write HTML report to file. Details: {e}",
+            exc_info=True,
+        )
 
     # Save the narrative JSON file as well for native dashboard rendering
     json_output_path = output_filename.replace(".html", ".json")
@@ -520,9 +529,11 @@ def generate_html_report(
         }
         with open(json_output_path, "w", encoding="utf-8") as f:
             json.dump(extended_narrative, f, ensure_ascii=False, indent=4)
-        print(f"   - Gemini narrative JSON saved successfully to '{json_output_path}'.")
+        log.info(
+            f"   - Gemini narrative JSON saved successfully to '{json_output_path}'."
+        )
     except Exception as e:
-        print(f"   - WARNING: Could not write narrative JSON. Details: {e}")
+        log.warning(f"   - WARNING: Could not write narrative JSON. Details: {e}")
 
 
 def generate_global_gemini_report(
@@ -534,7 +545,7 @@ def generate_global_gemini_report(
     if gemini_client is None:
         raise ValueError("Gemini client is not authenticated (API key missing or invalid).")
 
-    print("\n" + "=" * 50 + "\nGenerating Global Gemini Report...\n" + "=" * 50)
+    log.info("Generating Global Gemini Report...")
 
     advertiser_name = config.get("advertiser_name", "default_advertiser")
     global_output_dir = os.path.join(
@@ -554,7 +565,7 @@ def generate_global_gemini_report(
         with open(markdown_path, "r", encoding="utf-8") as f:
             markdown_content = f.read()
     except FileNotFoundError:
-        print(
+        log.error(
             f"   - ERROR: Could not find SATURATION_CURVE.md at {markdown_path}. Halting global report generation."
         )
         return
@@ -628,7 +639,7 @@ def generate_global_gemini_report(
             response.text.strip().replace("```json\n", "").replace("\n```", "")
         )
         narrative = json.loads(cleaned_response_text)
-        print("   - Global narrative generated and parsed successfully.")
+        log.info("   - Global narrative generated and parsed successfully.")
 
         # NEW: Save the JSON payload so the Streamlit UI can render the insights without re-running Gemini
         json_output_path = os.path.join(global_output_dir, "global_narrative.json")
@@ -950,11 +961,11 @@ def generate_global_gemini_report(
     try:
         with open(output_filename, "w", encoding="utf-8") as f:
             f.write(html_template)
-        print(
+        log.info(
             f"   - Global Gemini HTML report saved successfully to: {output_filename}"
         )
     except Exception as e:
-        import traceback
-
-        print(f"   - ERROR: Could not write global HTML report to file. Details: {e}")
-        traceback.print_exc()
+        log.error(
+            f"   - ERROR: Could not write global HTML report to file. Details: {e}",
+            exc_info=True,
+        )

@@ -1,12 +1,16 @@
 import unittest
+import logging
 import sys
 import io
 import os
+import tempfile
+from pathlib import Path
 
 # Ensure the root directory is in path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from logger import translate_line, LogContext
+import logger as logger_module
+from logger import translate_line, LogContext, setup_logging
 
 
 class TestLogger(unittest.TestCase):
@@ -95,26 +99,67 @@ class TestLogger(unittest.TestCase):
         self.assertIn("'PMAX'", warning)
         self.assertIn("55%", warning)
 
-    def test_log_context_suppression(self):
-        # We redirect sys.stdout inside LogContext, but we want to capture what LogContext writes to its parent stdout.
-        # We can mock the stdout property of LogContext.
-        captured_output = io.StringIO()
+class TestLoggingSetup(unittest.TestCase):
+    """Handler wiring: console gets pt-BR, files get the technical record."""
 
-        context = LogContext("test_namespace")
-        context.stdout = captured_output
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self._real_log_dir = logger_module.LOG_DIR
+        logger_module.LOG_DIR = Path(self._tmp.name)
+        self.console = io.StringIO()
+
+    def tearDown(self):
+        root = logging.getLogger()
+        for handler in root.handlers[:]:
+            root.removeHandler(handler)
+            handler.close()
+        logger_module.LOG_DIR = self._real_log_dir
+        self._tmp.cleanup()
+
+    def test_console_translates_and_files_keep_detail(self):
+        setup_logging("ns", stream=self.console)
+        log = logging.getLogger("scripts.saturation_curve")
+
+        log.debug("internal detail that must not reach the user")
+        log.info("Generating Global Gemini Report...")  # suppressed by the ruleset
+        log.info("Individual curve plot saved for META: C:\\path\\to\\image.png")
+        log.warning("   - WARNING: threshold flagged 43 of 78 periods for 'PMAX' (55%).")
+
+        console = self.console.getvalue()
+        self.assertNotIn("internal detail", console)
+        self.assertNotIn("Generating Global Gemini Report", console)
+        self.assertIn("   - Gráfico de saturação gerado para: META\n", console)
+        self.assertIn("43 de 78", console)
+
+        full = (Path(self._tmp.name) / "ns.log").read_text(encoding="utf-8")
+        self.assertIn("internal detail", full)  # DEBUG lands in the full log
+        self.assertIn("Generating Global Gemini Report", full)  # nothing is suppressed
+        self.assertIn("scripts.saturation_curve", full)  # module name is recorded
+
+        errors = (Path(self._tmp.name) / "ns.errors.log").read_text(encoding="utf-8")
+        self.assertIn("threshold flagged", errors)
+        self.assertNotIn("internal detail", errors)  # WARNING+ only
+
+    def test_log_context_captures_stray_prints(self):
+        context = LogContext("ns")
+        context.stdout = self.console
 
         with context:
             print("==================================================")
-            print("Generating Global Gemini Report...")
             print("Individual curve plot saved for META: C:\\path\\to\\image.png")
-            print("Global narrative generated and parsed successfully.")
 
-        output = captured_output.getvalue()
-        # The suppressed lines (===, Generating..., etc.) should not be in the output
-        self.assertNotIn("==================================================", output)
-        self.assertNotIn("Generating Global Gemini Report", output)
-        self.assertIn("   - Gráfico de saturação gerado para: META\n", output)
-        self.assertIn("   - Recomendações geradas com sucesso pela IA.\n", output)
+        console = self.console.getvalue()
+        self.assertNotIn("==================================================", console)
+        self.assertIn("   - Gráfico de saturação gerado para: META\n", console)
+
+    def test_log_context_records_unhandled_exception(self):
+        with self.assertRaises(ValueError):
+            with LogContext("ns"):
+                raise ValueError("boom")
+
+        errors = (Path(self._tmp.name) / "ns.errors.log").read_text(encoding="utf-8")
+        self.assertIn("boom", errors)
+        self.assertIn("Traceback", errors)
 
 
 if __name__ == "__main__":

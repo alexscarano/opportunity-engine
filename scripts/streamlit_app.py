@@ -10,8 +10,16 @@ import plotly.express as px
 import plotly.graph_objects as go
 import logging
 
-# Configure basic logging for standard output (capturable by Google Cloud Logging)
-logging.basicConfig(level=logging.INFO, format="%(message)s")
+import sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from logger import setup_logging
+
+# Same handlers as the engine (console + data/log/streamlit_app*.log). The
+# console line stays plain-text so Google Cloud Logging can capture stdout.
+setup_logging("streamlit_app")
+log = logging.getLogger(__name__)
+# Structured user-action tracking, kept on its own channel.
 logger = logging.getLogger("opp_engine_tracker")
 
 # Optional: keep logging for raw actions without email barriers, if desired later, but removing barrier logic here.
@@ -155,7 +163,7 @@ def _load_event_narrative(selected_dir):
                 escaped["metrics"] = res["metrics"]
                 return escaped
         except Exception as e:
-            print(f"Error loading JSON narrative: {e}")
+            log.warning(f"Error loading JSON narrative: {e}", exc_info=True)
 
     # 2. Check for HTML narrative fallback
     html_files = glob.glob(os.path.join(selected_dir, "gemini_report_*.html"))
@@ -269,7 +277,7 @@ def _load_event_narrative(selected_dir):
             escaped["metrics"] = res["metrics"]
             return escaped
         except Exception as e:
-            print(f"Error parsing HTML narrative: {e}")
+            log.warning(f"Error parsing HTML narrative: {e}", exc_info=True)
 
     # 3. Check for Markdown narrative fallback
     md_path = os.path.join(selected_dir, "RECOMMENDATIONS.md")
@@ -327,7 +335,7 @@ def _load_event_narrative(selected_dir):
             escaped["metrics"] = res["metrics"]
             return escaped
         except Exception as e:
-            print(f"Error parsing Markdown narrative: {e}")
+            log.warning(f"Error parsing Markdown narrative: {e}", exc_info=True)
 
     return None
 
@@ -1898,10 +1906,10 @@ with tab3:
                             kpi_df["kpi"].mean() * monthly_factor
                         )
                 except Exception as e:
-                    import traceback
-
-                    print(f"Error during data_preprocessor in Streamlit: {e}")
-                    traceback.print_exc()
+                    log.error(
+                        f"Error during data_preprocessor in Streamlit: {e}",
+                        exc_info=True,
+                    )
                     st.warning(
                         f"Não foi possível calcular o baseline real a partir dos dados de origem: {e}"
                     )
@@ -1915,10 +1923,9 @@ with tab3:
                 true_baseline_monthly_kpi,
             )
         except Exception as e:
-            import traceback
-
-            print(f"Error loading global saturation data in load_data: {e}")
-            traceback.print_exc()
+            log.error(
+                f"Error loading global saturation data in load_data: {e}", exc_info=True
+            )
             return None, None, None, None, 0.0, 0.0
 
     if st.session_state["active_config_path"]:

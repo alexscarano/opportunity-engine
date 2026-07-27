@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 import json
+import logging
 import os
 os.environ.setdefault("GRPC_VERBOSITY", "ERROR")
 os.environ.setdefault("GLOG_minloglevel", "3")
 import google.generativeai as genai
+
+log = logging.getLogger(__name__)
 
 
 def authenticate_gemini(api_key=None, model_name=None):
@@ -12,7 +15,7 @@ def authenticate_gemini(api_key=None, model_name=None):
         api_key = os.environ.get("GEMINI_API_KEY")
 
     if not api_key:
-        print(
+        log.error(
             "ERROR: No Gemini API key found. Please set the GEMINI_API_KEY environment variable."
         )
         return None
@@ -33,7 +36,7 @@ def authenticate_gemini(api_key=None, model_name=None):
                 )
             ]
         except Exception as list_err:
-            print(
+            log.warning(
                 f"Warning: Could not list models: {list_err}. Defaulting to fallbacks."
             )
 
@@ -48,7 +51,7 @@ def authenticate_gemini(api_key=None, model_name=None):
                         matched = True
                         break
                 if not matched:
-                    print(
+                    log.warning(
                         f"Warning: Requested model '{model_name}' not found in available models. Selecting a priority fallback instead."
                     )
                     model_name = None
@@ -68,7 +71,10 @@ def authenticate_gemini(api_key=None, model_name=None):
         gemini_client = genai.GenerativeModel(selected_model)
         return gemini_client
     except Exception as e:
-        print(f"An unexpected error occurred during Gemini authentication: {e}")
+        log.error(
+            f"An unexpected error occurred during Gemini authentication: {e}",
+            exc_info=True,
+        )
         return None
 
 

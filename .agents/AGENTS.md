@@ -59,5 +59,18 @@ The Max Impact Engine is a Python-based marketing analytics platform. It automat
 - If Gemini API is unavailable or offline mode is chosen, fall back cleanly to Markdown-based reporting (`RECOMMENDATIONS.md`).
 
 ### Logging & Error Handling
-- Use the `LogContext` context manager in `logger.py` to capture execution output and traceback data to namespace-specific logs inside `outputs/`.
+- **Never use `print()`.** Every module does `log = logging.getLogger(__name__)` and logs through it.
+- `logger.py` owns the setup (`setup_logging`), wiring three handlers:
+  - console (INFO+): the pt-BR line the end user reads in the Streamlit panel. `_RULES` translate the technical message and suppress noise.
+  - `data/log/<namespace>.log` (DEBUG+, rotating): full record with timestamp, level, `module:line`, traceback.
+  - `data/log/<namespace>.errors.log` (WARNING+, rotating): triage without scanning the full log.
+- Pick the level by impact, not verbosity:
+  - `DEBUG` internal parameters, per-iteration detail, resolved paths
+  - `INFO` pipeline milestones the user should see
+  - `WARNING` degraded but continuing: fallback used, event skipped, bad input tolerated
+  - `ERROR` one unit of work failed (an event, a report) -- the pipeline goes on
+  - `CRITICAL` the run cannot continue
+- Log exceptions with `exc_info=True` instead of `traceback.print_exc()` -- the traceback lands in the file log, never in the user's panel.
+- New user-facing message: add a `(regex, template)` row to `_RULES` in `logger.py`. Without a rule the raw English message reaches the panel.
+- CLI entrypoints wrap `main()` in `LogContext(namespace)`, which calls `setup_logging` and routes any residual `print()` through logging.
 - Handle individual event errors gracefully so they do not crash the entire pipeline run when processing multiple channels or events.

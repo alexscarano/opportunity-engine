@@ -4,6 +4,7 @@ This module contains all the core data processing and analysis functions,
 including event detection, causal impact modeling, and opportunity forecasting.
 """
 
+import logging
 import math
 import pandas as pd
 import numpy as np
@@ -21,6 +22,8 @@ import os
 
 warnings.filterwarnings("ignore", category=OptimizeWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
+
+log = logging.getLogger(__name__)
 
 
 def hill_transform(x, k, s):
@@ -90,7 +93,7 @@ def periods_to_days(days_config, period_days, min_periods, label=""):
     ceiled_periods = math.ceil(raw_periods)
     periods = max(min_periods, ceiled_periods)
     if periods > ceiled_periods:
-        print(
+        log.warning(
             f"   - AVISO: janela '{label}' configurada em {days_config} dia(s) "
             f"renderia menos que o mínimo de {min_periods} período(s) de dados "
             f"(cadência detectada: {period_days} dia(s)/período). Mínimo de "
@@ -113,18 +116,13 @@ def find_events(
     Finds all significant investment changes, groups overlapping events into a single
     consolidated event per week, and returns the final map.
     """
-    print(
-        "\n"
-        + "=" * 50
-        + "\nStarting Comprehensive Event Detection & Grouping...\n"
-        + "=" * 50
-    )
+    log.info("Starting Comprehensive Event Detection & Grouping...")
     try:
         df = df.rename(columns={"Product Group": "product_group", "Date": "dates"})
 
         all_individual_events = []
         product_groups = df["product_group"].unique()
-        print(
+        log.info(
             f"   - Analyzing {len(product_groups)} unique ad products for significant changes."
         )
 
@@ -182,7 +180,7 @@ def find_events(
             # normal de verba e a lista de candidatos vira ruído.
             flagged_share = len(significant_changes) / len(weekly_investment_df)
             if flagged_share > 0.25:
-                print(
+                log.warning(
                     f"   - WARNING: threshold flagged {len(significant_changes)} of "
                     f"{len(weekly_investment_df)} periods for '{product}' "
                     f"({flagged_share:.0%})."
@@ -198,7 +196,9 @@ def find_events(
                 )
 
         if not all_individual_events:
-            print("   - No significant individual events found across any ad products.")
+            log.warning(
+                "   - No significant individual events found across any ad products."
+            )
             return pd.DataFrame(), None, None
 
         individual_events_df = pd.DataFrame(all_individual_events)
@@ -242,14 +242,15 @@ def find_events(
             os.makedirs(output_dir, exist_ok=True)
             output_filepath = os.path.join(output_dir, "detected_events.csv")
             event_map_df.to_csv(output_filepath, index=False)
-            print(f"   - Detected events saved to: {output_filepath}")
+            log.info(f"   - Detected events saved to: {output_filepath}")
         # --- End New Code ---
 
         return event_map_df, None, None
 
     except (KeyError, TypeError) as e:
-        print(
-            f"Error processing data for event detection. Please check your input file columns. Details: {e}"
+        log.error(
+            f"Error processing data for event detection. Please check your input file columns. Details: {e}",
+            exc_info=True,
         )
         return pd.DataFrame(), None, None
 
@@ -301,7 +302,7 @@ def run_causal_impact_analysis(
         ]
 
         if found_covariates:
-            print(
+            log.info(
                 f"   - Found additional covariates in performance data: {found_covariates}"
             )
             for col in found_covariates:
@@ -326,7 +327,7 @@ def run_causal_impact_analysis(
                 how="left",
             )
         else:
-            print(
+            log.info(
                 "   - No additional performance covariates found. Proceeding without them."
             )
 
@@ -358,10 +359,10 @@ def run_causal_impact_analysis(
         best_alpha = model_params["alpha"]
         best_k = model_params["k"]
         best_s = model_params["s"]
-        print(
+        log.info(
             f"   - Using pre-trained ad-stock alpha for causal model: {best_alpha:.2f}"
         )
-        print(
+        log.info(
             f"   - Using pre-trained saturation params for causal model: k={best_k:.2f}, s={best_s:.2f}"
         )
 
@@ -393,12 +394,12 @@ def run_causal_impact_analysis(
             or post_data.empty
             or len(pre_data_for_model) < min_pre_periods
         ):
-            print(
+            log.warning(
                 f"   - SKIPPED: Insufficient data for causal impact analysis. Pre-period data points: {len(pre_data_for_model)} (min required: {min_pre_periods} período(s), cadência={period_days} dia(s)/período)."
             )
             return None, None, None, None, None
 
-        print("   - Running automated feature selection for causal model...")
+        log.info("   - Running automated feature selection for causal model...")
         potential_exog_vars = list(transformed_features.keys()) + [
             col
             for col in model_data.columns
@@ -437,7 +438,7 @@ def run_causal_impact_analysis(
             if not selected_features:
                 selected_features = list(transformed_features.keys())
 
-        print(f"   - Selected features for causal model: {selected_features}")
+        log.info(f"   - Selected features for causal model: {selected_features}")
         model = sm.tsa.UnobservedComponents(
             pre_data_for_model["kpi"],
             "llevel",
@@ -460,7 +461,7 @@ def run_causal_impact_analysis(
             (pre_data_for_model["kpi"] - np.mean(pre_data_for_model["kpi"])) ** 2
         )
         r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
-        print(f"   - Causal model R-squared (in-sample): {r_squared:.4f}")
+        log.info(f"   - Causal model R-squared (in-sample): {r_squared:.4f}")
 
         accuracy_df = pre_data_for_model.copy()
         accuracy_df["Predicted"] = in_sample_preds
@@ -657,7 +658,10 @@ def run_causal_impact_analysis(
             accuracy_df,
         )
     except Exception as e:
-        print(f"An unexpected error occurred during causal impact analysis: {e}")
+        log.error(
+            f"An unexpected error occurred during causal impact analysis: {e}",
+            exc_info=True,
+        )
         return None, None, None, None, None
 
 
@@ -666,12 +670,7 @@ def _train_response_model(model_data, product_group, config):
     Trains the ad-stock and saturation model on INCREMENTAL KPIs by first
     modeling and subtracting the baseline performance.
     """
-    print(
-        "\n"
-        + "=" * 50
-        + "\nTraining Response Model for Projection on INCREMENTAL Data...\n"
-        + "=" * 50
-    )
+    log.info("Training Response Model for Projection on INCREMENTAL Data...")
 
     event_channels = [ch.strip() for ch in product_group.split(",")]
     valid_event_channels = [ch for ch in event_channels if ch in model_data.columns]
@@ -681,7 +680,7 @@ def _train_response_model(model_data, product_group, config):
         )
 
     # --- 1. Model and Subtract Baseline KPI ---
-    print("   - Modeling baseline KPI using non-investment features...")
+    log.info("   - Modeling baseline KPI using non-investment features...")
     country_code = config.get("country_code", "BR")
     period_days = config.get("period_days", 1)
     model_data_featured = create_calendar_features(
@@ -713,7 +712,7 @@ def _train_response_model(model_data, product_group, config):
     # manufacturing an incremental response from noise. Fitting on the signed
     # residual reports the honest response, which can legitimately be near flat.
     model_data_featured["incremental_kpi"] = y_base - baseline_kpi_predictions
-    print("   - Baseline subtracted. Modeling response on incremental KPI.")
+    log.info("   - Baseline subtracted. Modeling response on incremental KPI.")
 
     # --- 2. Model Investment vs. Incremental KPI ---
     full_period_investment = model_data_featured[valid_event_channels].sum(axis=1)
@@ -727,7 +726,7 @@ def _train_response_model(model_data, product_group, config):
         for alpha in possible_alphas
     }
     best_alpha = max(correlations, key=correlations.get)
-    print(f"   - Best ad-stock alpha (incremental data): {best_alpha:.2f}")
+    log.info(f"   - Best ad-stock alpha (incremental data): {best_alpha:.2f}")
 
     adstocked_investment = pd.Series(
         geometric_decay(full_period_investment, best_alpha),
@@ -763,11 +762,11 @@ def _train_response_model(model_data, product_group, config):
             maxfev=5000,
         )
         best_k, best_s = popt
-        print(
+        log.info(
             f"   - Best saturation params (incremental data): k={best_k:.2f}, s={best_s:.2f}"
         )
     except (RuntimeError, ValueError) as e:
-        print(
+        log.warning(
             f"   - WARNING: Could not find optimal saturation curve for incremental data. Using defaults. Error: {e}"
         )
 
@@ -791,7 +790,7 @@ def _train_response_model(model_data, product_group, config):
         equal_share = 1 / len(valid_event_channels) if valid_event_channels else 0
         for channel in valid_event_channels:
             channel_proportions[channel] = equal_share
-    print(f"   - Calculated channel investment proportions: {channel_proportions}")
+    log.info(f"   - Calculated channel investment proportions: {channel_proportions}")
 
     historical_adstocked_inv = hist_avg_investment / (1 - best_alpha)
     historical_saturated_response = hill_transform(
@@ -808,7 +807,7 @@ def _train_response_model(model_data, product_group, config):
         "scaler": max_kpi_scaler,
         "base_kpi": base_kpi_avg,
     }
-    print("   - Incremental projection model training complete.")
+    log.info("   - Incremental projection model training complete.")
     return (
         best_alpha,
         best_k,
@@ -827,12 +826,7 @@ def run_opportunity_projection(
     """
     Trains a new response model on all data and then finds the optimal investment sweet spot.
     """
-    print(
-        "\n"
-        + "=" * 50
-        + "\nFinding the Investment Sweet Spot & Projecting Opportunity...\n"
-        + "=" * 50
-    )
+    log.info("Finding the Investment Sweet Spot & Projecting Opportunity...")
     optimization_target = config.get("optimization_target", "REVENUE").upper()
 
     try:
@@ -895,7 +889,7 @@ def run_opportunity_projection(
         avg_ticket = 1.0 if kpi_is_monetary else config.get("average_ticket", 0)
         revenue_mode = kpi_is_monetary or optimization_target == "REVENUE"
         if kpi_is_monetary and optimization_target == "CONVERSIONS":
-            print(
+            log.warning(
                 "   - AVISO (config): optimization_target='CONVERSIONS' foi ignorado "
                 "porque kpi_is_monetary=true (o KPI ja e R$), entao o modo receita/ROAS "
                 "esta em uso. Se o KPI for uma contagem (unidades, nao R$), desmarque "
@@ -1055,7 +1049,7 @@ def run_opportunity_projection(
                     valid_points_df["Incremental_ROI"] >= min_iroas
                 ]
         elif min_roas > 0 or min_iroas > 0:
-            print(
+            log.warning(
                 "   - AVISO (config): target_roas/target_iroas foram ignorados porque "
                 "o KPI nao e monetario e optimization_target != 'REVENUE' -- ROAS exige "
                 "Projected_Revenue, que so existe em modo receita."
@@ -1113,14 +1107,13 @@ def run_opportunity_projection(
         )
 
     except Exception as e:
-        import traceback
-
-        print(f"An error occurred in the sweet spot calculation: {e}")
-        print(
+        log.error(
+            f"An error occurred in the sweet spot calculation: {e}", exc_info=True
+        )
+        log.error(
             f"   - Config causadora da falha: optimization_target={optimization_target!r}, "
             f"financial_targets={config.get('financial_targets', {})}"
         )
-        traceback.print_exc()
         return pd.DataFrame(), pd.DataFrame(), {}, {}, {}, {}, {}, {}, {}
 
 
@@ -1135,7 +1128,7 @@ def find_optimal_historical_mix(kpi_df, daily_investment_df):
     """
     Analyzes historical data to find the investment mix from the most efficient periods.
     """
-    print("   - - Analyzing historical data to find the optimal investment mix...")
+    log.info("   - - Analyzing historical data to find the optimal investment mix...")
 
     # Pivot investment data to have channels as columns
     investment_pivot = daily_investment_df.pivot_table(
@@ -1164,7 +1157,7 @@ def find_optimal_historical_mix(kpi_df, daily_investment_df):
     weekly_df = weekly_df[weekly_df["Total_Investment"] > 0]
 
     if weekly_df.empty:
-        print("   - No historical investment data to analyze for optimal mix.")
+        log.warning("   - No historical investment data to analyze for optimal mix.")
         return None
 
     # Identify the top 10% most efficient weeks
@@ -1172,12 +1165,12 @@ def find_optimal_historical_mix(kpi_df, daily_investment_df):
     top_weeks = weekly_df[weekly_df["Efficiency_Ratio"] >= top_quantile]
 
     if top_weeks.empty:
-        print("   - Could not identify top efficiency weeks.")
+        log.warning("   - Could not identify top efficiency weeks.")
         return None
 
     # Calculate the investment share for each channel during these top weeks
     top_weeks_investment = top_weeks[investment_pivot.columns]
     optimal_mix = top_weeks_investment.sum() / top_weeks_investment.sum().sum()
 
-    print(f"   - Found optimal historical mix from top {len(top_weeks)} weeks.")
+    log.info(f"   - Found optimal historical mix from top {len(top_weeks)} weeks.")
     return optimal_mix.to_dict()

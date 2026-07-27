@@ -1,17 +1,46 @@
-import datetime
+"""Logging setup for the engine.
+
+Three handlers, three audiences:
+
+- console (INFO+)   -> the pt-BR line the end user reads in the Streamlit panel.
+                       `_RULES` translate the technical message and drop noise.
+- <ns>.log (DEBUG+) -> full technical record: timestamp, level, module:line, traceback.
+- <ns>.errors.log   -> WARNING+ only, for triage without scanning the full log.
+
+Module code should do `log = logging.getLogger(__name__)` and pick the level by
+impact, not by verbosity:
+
+    DEBUG    internal parameters, per-iteration detail, resolved paths
+    INFO     pipeline milestones the user should see
+    WARNING  degraded but continuing: fallback used, event skipped, bad input tolerated
+    ERROR    one unit of work failed (an event, a report) -- pipeline goes on
+    CRITICAL the run cannot continue
+"""
+
+import logging
+import logging.handlers
+import os
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 
-
-def time_s() -> str:
-    return datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-
-
-def log(namespace: str, data: str) -> None:
-    path = Path(f"./data/log/{namespace}_{time_s()}.log")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(data, encoding="utf-8")
+LOG_DIR = Path("./data/log")
+_FILE_FORMAT = (
+    "%(asctime)s %(levelname)-8s %(name)s:%(lineno)d %(funcName)s() | %(message)s"
+)
+# ponytail: root runs at DEBUG, and these libraries are unusable at that level
+# (matplotlib's font manager alone emits thousands of lines per run).
+_NOISY = (
+    "matplotlib",
+    "PIL",
+    "urllib3",
+    "httpx",
+    "httpcore",
+    "google",
+    "numexpr",
+    "asyncio",
+)
 
 
 def _banner(text) -> str:
@@ -174,6 +203,28 @@ _RULES = [
         _banner("Iniciando modelagem global de elasticidade e retorno (MMM)..."),
     ),
     (
+        r"Starting Two-Stage Elasticity Analysis Engine\.\.\.",
+        _divider("Modelando baseline organico e resposta de midia em duas etapas..."),
+    ),
+    (
+        r"Training Response Model for Projection on INCREMENTAL Data\.\.\.",
+        _divider("Treinando modelo de projecao sobre o resultado incremental..."),
+    ),
+    (
+        r"Finding the Investment Sweet Spot & Projecting Opportunity\.\.\.",
+        _divider(
+            "Procurando o ponto ideal de investimento e projetando a oportunidade..."
+        ),
+    ),
+    (
+        r"Starting Global Saturation Analysis\.\.\.",
+        _banner("Iniciando analise global de saturacao dos canais..."),
+    ),
+    (
+        r"Global Saturation Analysis Complete\.",
+        "   - Analise global de saturacao concluida.",
+    ),
+    (
         r"Generating Global Strategic Narrative with Gemini\.\.\.",
         "   - Gerando recomendações globais de verba com a IA Gemini...",
     ),
@@ -319,57 +370,139 @@ def translate_line(line: str) -> str | None:
     return line
 
 
+class TranslationFilter(logging.Filter):
+    """Console only: drop records the pt-BR ruleset marks as noise."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.name == "py.warnings":
+            return (
+                False  # library warnings belong in the file log, not the user's panel
+            )
+        return translate_line(record.getMessage()) is not None
+
+
+class TranslationFormatter(logging.Formatter):
+    """Console only: render the pt-BR line, without traceback or metadata."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return translate_line(record.getMessage()) or ""
+
+
+class _StreamToLogger:
+    """Residual print()/library stdout writes, routed through logging.
+
+    Keeps stray output from bypassing the handlers (and the translation filter).
+    """
+
+    def __init__(self, logger: logging.Logger, level: int):
+        self.logger = logger
+        self.level = level
+        self.buffer = ""
+
+    def write(self, message: str) -> None:
+        self.buffer += message
+        while "\n" in self.buffer:
+            line, self.buffer = self.buffer.split("\n", 1)
+            if line.strip():
+                self.logger.log(self.level, line)
+
+    def flush(self) -> None:
+        if self.buffer.strip():
+            self.logger.log(self.level, self.buffer)
+        self.buffer = ""
+
+    def isatty(self) -> bool:
+        return False
+
+
+def setup_logging(
+    namespace: str,
+    stream=None,
+    level: int = logging.DEBUG,
+    console_level: int = logging.INFO,
+) -> logging.Logger:
+    """Configure the root logger. Idempotent: re-running replaces the handlers."""
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+    stream = stream if stream is not None else sys.stdout
+    if hasattr(stream, "reconfigure"):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass  # already-detached or non-reconfigurable stream (tests, pipes)
+
+    console = logging.StreamHandler(stream)
+    console.setLevel(console_level)
+    console.addFilter(TranslationFilter())
+    console.setFormatter(TranslationFormatter())
+
+    def _file(name: str, min_level: int, max_bytes: int, backups: int):
+        handler = logging.handlers.RotatingFileHandler(
+            LOG_DIR / name,
+            maxBytes=max_bytes,
+            backupCount=backups,
+            encoding="utf-8",
+            delay=True,
+        )
+        handler.setLevel(min_level)
+        handler.setFormatter(logging.Formatter(_FILE_FORMAT))
+        return handler
+
+    full = _file(f"{namespace}.log", logging.DEBUG, 5_000_000, 5)
+    errors = _file(f"{namespace}.errors.log", logging.WARNING, 1_000_000, 3)
+
+    root = logging.getLogger()
+    for handler in root.handlers[:]:
+        root.removeHandler(handler)
+        handler.close()
+    root.setLevel(level)
+    root.handlers = [console, full, errors]
+
+    logging.captureWarnings(True)
+    for name in _NOISY:
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+    # Rotation mixes runs in one file, so mark where each one starts.
+    full.handle(
+        logging.LogRecord(
+            namespace,
+            logging.INFO,
+            __file__,
+            0,
+            "=== run started %s pid=%s ===",
+            (datetime.now().isoformat(timespec="seconds"), os.getpid()),
+            None,
+            func="setup_logging",
+        )
+    )
+    return root
+
+
 class LogContext:
+    """Set up logging for a CLI run and capture anything that still prints."""
+
     def __init__(self, namespace: str):
         self.namespace = namespace
         self.stdout = sys.stdout
         self.stderr = sys.stderr
-        self.log_data = []
-        self.buffer = ""
-
-    def write(self, message):
-        self.buffer += message
-        while "\n" in self.buffer:
-            line, self.buffer = self.buffer.split("\n", 1)
-            translated = translate_line(line)
-            if translated is None:
-                continue
-            try:
-                self.stdout.write(translated + "\n")
-            except UnicodeEncodeError:
-                enc = getattr(self.stdout, "encoding", "utf-8") or "utf-8"
-                self.stdout.write(
-                    (translated + "\n").encode(enc, errors="replace").decode(enc)
-                )
-            self.log_data.append(translated + "\n")
-
-    def flush(self):
-        if self.buffer:
-            translated = translate_line(self.buffer)
-            if translated is not None:
-                try:
-                    self.stdout.write(translated)
-                except UnicodeEncodeError:
-                    enc = getattr(self.stdout, "encoding", "utf-8") or "utf-8"
-                    self.stdout.write(
-                        translated.encode(enc, errors="replace").decode(enc)
-                    )
-                self.log_data.append(translated)
-            self.buffer = ""
-        self.stdout.flush()
-        self.stderr.flush()
 
     def __enter__(self):
-        sys.stdout = self
-        sys.stderr = self
+        setup_logging(self.namespace, stream=self.stdout)
+        stray = logging.getLogger("stdout")
+        sys.stdout = _StreamToLogger(stray, logging.INFO)
+        sys.stderr = _StreamToLogger(stray, logging.ERROR)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.stdout.flush()
+        sys.stderr.flush()
         sys.stdout = self.stdout
         sys.stderr = self.stderr
         if exc_type:
-            import traceback
-
-            tb_str = "".join(traceback.format_exception(exc_type, exc_val, exc_tb))
-            self.write(tb_str)
-        log(self.namespace, "".join(self.log_data))
+            logging.getLogger(self.namespace).critical(
+                "A critical, unexpected error occurred during the main process: %s",
+                exc_val,
+                exc_info=(exc_type, exc_val, exc_tb),
+            )
+        for handler in logging.getLogger().handlers:
+            handler.flush()
