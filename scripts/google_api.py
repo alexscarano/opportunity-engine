@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import json
 import os
 os.environ.setdefault("GRPC_VERBOSITY", "ERROR")
 os.environ.setdefault("GLOG_minloglevel", "3")
@@ -69,3 +70,72 @@ def authenticate_gemini(api_key=None, model_name=None):
     except Exception as e:
         print(f"An unexpected error occurred during Gemini authentication: {e}")
         return None
+
+
+def suggest_form_fields(model, performance_df_sample):
+    """Pede ao Gemini para sugerir Coluna do KPI, se é monetário, e o
+    Objetivo da Otimização a partir de uma amostra do CSV de performance.
+
+    Levanta ValueError se a resposta vier ausente, malformada, ou falhar
+    na validação contra as colunas reais da amostra.
+    """
+    columns = performance_df_sample.columns.tolist()
+    sample_csv = performance_df_sample.head(5).to_csv(index=False)
+
+    prompt = f"""Você está configurando uma análise de marketing. Aqui estão as
+colunas disponíveis no arquivo de performance e uma amostra de linhas:
+
+Colunas: {columns}
+
+Amostra (CSV):
+{sample_csv}
+
+Responda APENAS com um JSON no formato exato abaixo, sem texto adicional e
+sem markdown fences:
+
+{{"kpi_column": "<nome exato de uma das colunas listadas acima>", "kpi_is_monetary": true ou false, "optimization_target": "CONVERSIONS" ou "REVENUE"}}
+
+Regras:
+- "kpi_column" deve ser o nome de uma métrica de resultado (ex: conversões,
+  leads, vendas, receita), nunca uma coluna de data ou de texto categórico.
+- "kpi_is_monetary" é true só se os valores da coluna parecerem moeda
+  (decimais, valores altos e variáveis típicos de receita/faturamento).
+- "optimization_target" é "REVENUE" só se "kpi_is_monetary" for true ou a
+  coluna claramente representar receita/faturamento; caso contrário
+  "CONVERSIONS".
+"""
+
+    response = model.generate_content(prompt)
+    cleaned_response_text = (
+        response.text.strip().replace("```json\n", "").replace("\n```", "").replace("```", "")
+    )
+
+    try:
+        suggestion = json.loads(cleaned_response_text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"resposta da IA não é um JSON válido: {e}") from e
+
+    kpi_column = suggestion.get("kpi_column")
+    if not isinstance(kpi_column, str) or kpi_column not in columns:
+        raise ValueError(
+            f"coluna de KPI sugerida ('{kpi_column}') não existe nas colunas do arquivo"
+        )
+
+    kpi_is_monetary = suggestion.get("kpi_is_monetary")
+    if isinstance(kpi_is_monetary, str):
+        kpi_is_monetary = kpi_is_monetary.strip().lower() == "true"
+    if not isinstance(kpi_is_monetary, bool):
+        raise ValueError("'kpi_is_monetary' sugerido não é um booleano")
+
+    optimization_target = suggestion.get("optimization_target")
+    if optimization_target not in ("CONVERSIONS", "REVENUE"):
+        raise ValueError(
+            f"'optimization_target' sugerido ('{optimization_target}') não é "
+            "'CONVERSIONS' nem 'REVENUE'"
+        )
+
+    return {
+        "kpi_column": kpi_column,
+        "kpi_is_monetary": kpi_is_monetary,
+        "optimization_target": optimization_target,
+    }
