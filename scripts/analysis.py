@@ -203,9 +203,17 @@ def find_events(
 
         individual_events_df = pd.DataFrame(all_individual_events)
         individual_events_df["date"] = pd.to_datetime(individual_events_df["date"])
-        individual_events_df["event_week"] = (
-            individual_events_df["date"].dt.to_period("W").dt.start_time
-        )
+        if period_days >= 7:
+            # Mesma guarda do agrupamento por produto acima: cada linha JÁ é um
+            # período. Re-bucketizar em semanas W-SUN rotula o evento com a
+            # segunda-feira que abre a semana -- para base semanal marcada no
+            # domingo isso vira sempre "data real - 6 dias", uma data que não
+            # existe no arquivo do cliente.
+            individual_events_df["event_week"] = individual_events_df["date"]
+        else:
+            individual_events_df["event_week"] = (
+                individual_events_df["date"].dt.to_period("W").dt.start_time
+            )
 
         # Consolidate events that occur in the same week
         consolidated_events = []
@@ -620,8 +628,11 @@ def run_causal_impact_analysis(
         ).set_index("Category")
 
         results_dict = {
-            "start_date": post_period[0],
-            "end_date": post_period[1],
+            # Janela efetivamente medida, não a solicitada: quando o evento está
+            # perto do fim da base, post_period[1] cai depois do último dado e
+            # relatar essa data sugere um período que nunca foi analisado.
+            "start_date": post_data.index.min().strftime("%Y-%m-%d"),
+            "end_date": post_data.index.max().strftime("%Y-%m-%d"),
             "product_group": product_group,
             "absolute_lift": abs_lift,
             "absolute_lift_ci_lower": impact_ci_lower,

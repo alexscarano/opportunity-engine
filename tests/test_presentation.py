@@ -20,7 +20,28 @@ from presentation import (
     save_sessions_bar_plot,
     save_causal_chart_data,
     create_comparative_saturation_md,
+    create_presentation_dataframe,
 )
+
+
+class TestPresentationDataframeWindow(unittest.TestCase):
+    """A janela do CSV tem que vir do próprio evento analisado -- já foi gravada
+    a janela de outro evento por reaproveitamento de variável no chamador."""
+
+    def test_window_comes_from_causal_results(self):
+        df = create_presentation_dataframe(
+            {
+                "start_date": "2026-02-16",
+                "end_date": "2026-03-16",
+                "absolute_lift": 100.0,
+                "p_value": 0.05,
+            },
+            {"p_value_threshold": 0.1, "conversion_rate_from_kpi_to_bo": 0.01,
+             "average_ticket": 100.0},
+        )
+        values = dict(zip(df["Metrica"], df["Valor"]))
+        self.assertEqual(values["causal_periodo_inicio"], "2026-02-16")
+        self.assertEqual(values["causal_periodo_fim"], "2026-03-16")
 
 
 class TestPresentationChartsTranslation(unittest.TestCase):

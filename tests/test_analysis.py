@@ -238,6 +238,29 @@ def test_find_events_weekly_data_still_detects_a_real_spike():
     assert event_map_df["percentage_change"].abs().max() > 100
 
 
+def test_find_events_weekly_data_reports_a_date_that_exists_in_the_input():
+    """A data do evento é o rótulo que vira nome de pasta, título de relatório e
+    janela pré/pós. Com base semanal marcada no domingo, o agrupamento em semanas
+    W-SUN devolvia a segunda-feira que abre a semana -- 'data real - 6 dias', que
+    não existe no arquivo do cliente."""
+    dates = pd.date_range("2024-01-07", periods=20, freq="7D")  # domingos
+    assert set(dates.day_name()) == {"Sunday"}
+    investment = np.full(20, 1000.0)
+    investment[10] = 3000.0
+
+    df = pd.DataFrame(
+        {"Date": dates, "Product Group": "TestChannel", "investment": investment}
+    )
+
+    event_map_df, _, _ = find_events(df, "TestCo", 1.5, 0.5, 14, period_days=7)
+
+    reported = pd.to_datetime(event_map_df["date"])
+    assert reported.isin(dates).all(), (
+        f"eventos rotulados com datas fora da base: "
+        f"{[d.strftime('%Y-%m-%d') for d in reported if d not in dates]}"
+    )
+
+
 # --- periods_in_post scaling for non-canonical cadence (period_days 2-6) ---
 
 

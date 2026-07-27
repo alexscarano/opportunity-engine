@@ -383,7 +383,7 @@ def main(config, args):
 
                                 # Generate and save the comprehensive presentation data CSV for this event
                                 presentation_df = create_presentation_dataframe(
-                                    results_data, config, post_period
+                                    results_data, config
                                 )
                                 csv_filename = os.path.join(
                                     event_output_dir,

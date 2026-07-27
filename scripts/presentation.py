@@ -20,8 +20,13 @@ except ImportError as e:
     sys.exit(1)
 
 
-def create_presentation_dataframe(causal_results, config, post_period):
-    """Shared helper: builds the presentation CSV DataFrame from causal results."""
+def create_presentation_dataframe(causal_results, config):
+    """Shared helper: builds the presentation CSV DataFrame from causal results.
+
+    A janela vem de causal_results (start_date/end_date = período realmente
+    medido). Receber post_period por fora era o que permitia gravar a janela do
+    evento errado quando o chamador reaproveitava uma variável de outro loop.
+    """
     conversion_rate = config.get("conversion_rate_from_kpi_to_bo", 0)
     avg_ticket = config.get("average_ticket", 0)
     causal_incremental_kpi = causal_results.get("absolute_lift", 0)
@@ -36,8 +41,8 @@ def create_presentation_dataframe(causal_results, config, post_period):
         "estatistica_r_squared": causal_results.get("model_r_squared", 0),
         "estatistica_mape": causal_results.get("mape", 0),
         "estatistica_mae": causal_results.get("mae", 0),
-        "causal_periodo_inicio": post_period[0],
-        "causal_periodo_fim": post_period[1],
+        "causal_periodo_inicio": causal_results.get("start_date", ""),
+        "causal_periodo_fim": causal_results.get("end_date", ""),
         "causal_aumento_investimento_pct": causal_results.get("investment_change_pct", 0),
         "causal_kpis_incrementais": causal_incremental_kpi,
         "causal_pedidos_incrementais": causal_incremental_orders,
