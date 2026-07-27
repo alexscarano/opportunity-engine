@@ -614,7 +614,9 @@ from data_preprocessor import (
     guess_investment_col,
     guess_trends_col,
     guess_kpi_col,
+    read_csv_robust,
 )
+from google_api import suggest_form_fields
 
 import base64
 
@@ -1209,7 +1211,7 @@ with tab1:
                 "da Otimização é 'Receita'.",
             )
 
-        col_btn1, col_btn2 = st.columns(2)
+        col_btn1, col_btn2, col_btn3 = st.columns(3)
         with col_btn1:
             submit_btn = st.form_submit_button(
                 "Construir Motor de Oportunidades",
@@ -1219,6 +1221,20 @@ with tab1:
         with col_btn2:
             save_settings_btn = st.form_submit_button(
                 "Salvar Configurações", type="secondary", use_container_width=True
+            )
+        with col_btn3:
+            ai_suggest_btn = st.form_submit_button(
+                "Sugerir com IA",
+                type="secondary",
+                use_container_width=True,
+                help=(
+                    "Analisa os arquivos enviados e sugere: Coluna do KPI, se o "
+                    "KPI já está em R$, e o Objetivo da Otimização. Não sugere "
+                    "Ticket Médio, Taxa de Conversão nem os limites da Análise "
+                    "Causal -- esses continuam manuais. Decide só pelos nomes de "
+                    "coluna e uma amostra de linhas do CSV de Performance; requer "
+                    "Chave de API do Gemini preenchida."
+                ),
             )
 
     if save_settings_btn:
@@ -1370,6 +1386,7 @@ with tab1:
                 os.path.join(os.path.dirname(__file__), "..")
             )
             env["PYTHONIOENCODING"] = "utf-8"
+            env["PYTHONUNBUFFERED"] = "1"
 
             import sys
 
