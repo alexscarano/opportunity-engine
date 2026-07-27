@@ -19,6 +19,8 @@ from data_preprocessor import (
     guess_investment_col,
     guess_trends_col,
     guess_kpi_col,
+    detect_cadence,
+    drop_partial_periods,
 )
 
 
@@ -519,3 +521,180 @@ def test_guess_helpers_return_defaults_on_empty_or_missing_path():
     assert guess_investment_col("") == "total_revenue"
     assert guess_trends_col("") == "Ad Opportunities"
     assert guess_kpi_col("", "Sessions") == "Sessions"
+
+
+# --- detect_cadence ---
+
+
+def test_detect_cadence_daily_series_returns_1():
+    dates = pd.Series(pd.date_range("2025-01-01", periods=30, freq="1D"))
+    assert detect_cadence(dates) == 1
+
+
+def test_detect_cadence_weekly_series_returns_7():
+    dates = pd.Series(pd.date_range("2025-01-01", periods=30, freq="7D"))
+    assert detect_cadence(dates) == 7
+
+
+def test_detect_cadence_monthly_series_snaps_to_30():
+    dates = pd.Series(pd.date_range("2025-01-01", periods=12, freq="MS"))
+    assert detect_cadence(dates) == 30
+
+
+def test_detect_cadence_non_canonical_returns_raw_median():
+    # Fortnightly (14-day) spacing doesn't fall in any known bucket.
+    dates = pd.Series(pd.date_range("2025-01-01", periods=10, freq="14D"))
+    assert detect_cadence(dates) == 14
+
+
+def test_detect_cadence_fewer_than_2_unique_dates_returns_1():
+    """Documented default: with 0 or 1 unique dates there's no diff() to
+    compute a cadence from, so we assume daily (1) as a safe default -- this
+    shouldn't happen in practice since load_and_prepare_data only calls
+    detect_cadence after validating the dataframes are non-empty."""
+    assert detect_cadence(pd.Series([], dtype="datetime64[ns]")) == 1
+    assert detect_cadence(pd.Series([pd.Timestamp("2025-01-01")])) == 1
+    # Duplicate dates collapse to a single unique date too.
+    assert detect_cadence(pd.Series([pd.Timestamp("2025-01-01")] * 5)) == 1
+
+
+# --- drop_partial_periods ---
+
+
+def test_drop_partial_periods_catches_mid_series_stub_not_just_edges():
+    """Regression for the real exemplo_csv weekly file: a New Year's
+    re-anchor splits what should have been one normal week (28/12 -> 04/01,
+    7 days) into two short gaps (28/12 -> 01/01 = 4 days, 01/01 -> 04/01 = 3
+    days). Only 01/01 has BOTH neighbor-distances short, so it's the one
+    genuine stub -- its neighbors (28/12 and 04/01) must be kept.
+    """
+    dates = pd.to_datetime(
+        [
+            "2025-12-14",
+            "2025-12-21",
+            "2025-12-28",
+            "2026-01-01",  # stub: 4 days after prev, 3 days before next
+            "2026-01-04",
+            "2026-01-11",
+        ]
+    )
+    df = pd.DataFrame({"Date": dates, "value": range(len(dates))})
+
+    result = drop_partial_periods(df, "Date", cadence=7)
+
+    assert pd.Timestamp("2026-01-01") not in result["Date"].tolist()
+    assert pd.Timestamp("2025-12-28") in result["Date"].tolist()
+    assert pd.Timestamp("2026-01-04") in result["Date"].tolist()
+    assert len(result) == len(dates) - 1
+
+
+def test_drop_partial_periods_catches_stub_at_start_of_series():
+    """The real exemplo_csv file also has a partial first week (2025-01-01
+    is only 4 days before the next date, 2025-01-05) -- the very first row
+    has no 'previous' neighbor, so the check falls back to the single
+    distance it does have (to the next date)."""
+    dates = pd.to_datetime(
+        ["2025-01-01", "2025-01-05", "2025-01-12", "2025-01-19"]
+    )
+    df = pd.DataFrame({"Date": dates})
+
+    result = drop_partial_periods(df, "Date", cadence=7)
+
+    assert pd.Timestamp("2025-01-01") not in result["Date"].tolist()
+    assert len(result) == 3
+
+
+def test_drop_partial_periods_catches_stub_at_end_of_series():
+    """A trailing partial period (no 'next' date to compare against) must
+    still be caught by falling back to the distance from the previous date."""
+    dates = pd.to_datetime(
+        ["2025-01-01", "2025-01-08", "2025-01-15", "2025-01-17"]
+    )  # last gap is only 2 days, well under 0.6*7=4.2
+    df = pd.DataFrame({"Date": dates})
+
+    result = drop_partial_periods(df, "Date", cadence=7)
+
+    assert pd.Timestamp("2025-01-17") not in result["Date"].tolist()
+    assert len(result) == 3
+
+
+def test_drop_partial_periods_clean_series_drops_nothing():
+    dates = pd.to_datetime(pd.date_range("2025-01-01", periods=10, freq="7D"))
+    df = pd.DataFrame({"Date": dates, "value": range(10)})
+
+    result = drop_partial_periods(df, "Date", cadence=7)
+
+    assert len(result) == 10
+    assert result["Date"].tolist() == dates.tolist()
+
+
+def test_drop_partial_periods_logs_dropped_dates(capsys):
+    dates = pd.to_datetime(["2025-01-01", "2025-01-08", "2025-01-15", "2025-01-17"])
+    df = pd.DataFrame({"Date": dates})
+
+    drop_partial_periods(df, "Date", cadence=7)
+
+    out = capsys.readouterr().out
+    assert "17/01/2025" in out
+    assert "1 linha(s)" in out
+
+
+# --- load_and_prepare_data cadence integration ---
+
+
+def test_load_and_prepare_data_raises_on_divergent_cadences(tmp_path):
+    """Investment file reports daily, performance file reports weekly --
+    must raise instead of silently trying to reconcile them."""
+    investment_path = _write_csv(
+        tmp_path / "investment.csv",
+        "dates,product_group,total_revenue\n"
+        + "".join(
+            f"2025-01-{d:02d},GOOGLE,{100 + d}\n" for d in range(1, 15)
+        ),
+    )
+    performance_path = _write_csv(
+        tmp_path / "performance.csv",
+        "date,kpi\n2025-01-01,10\n2025-01-08,20\n2025-01-15,30\n2025-01-22,40\n",
+    )
+    config = {
+        "investment_file_path": investment_path,
+        "performance_file_path": performance_path,
+        "performance_kpi_column": "kpi",
+        "date_formats": {
+            "investment_file": "%Y-%m-%d",
+            "performance_file": "%Y-%m-%d",
+        },
+        "treat_outliers": False,
+    }
+
+    with pytest.raises(Exception, match="[Cc]adência"):
+        load_and_prepare_data(config)
+
+
+def test_load_and_prepare_data_populates_config_period_days_for_weekly_data(tmp_path):
+    dates = pd.date_range("2025-01-01", periods=8, freq="7D").strftime("%Y-%m-%d")
+    investment_path = _write_csv(
+        tmp_path / "investment.csv",
+        "dates,product_group,total_revenue\n"
+        + "".join(f"{d},GOOGLE,{100 + i}\n" for i, d in enumerate(dates)),
+    )
+    performance_path = _write_csv(
+        tmp_path / "performance.csv",
+        "date,kpi\n" + "".join(f"{d},{10 + i}\n" for i, d in enumerate(dates)),
+    )
+    config = {
+        "investment_file_path": investment_path,
+        "performance_file_path": performance_path,
+        "performance_kpi_column": "kpi",
+        "date_formats": {
+            "investment_file": "%Y-%m-%d",
+            "performance_file": "%Y-%m-%d",
+        },
+        "treat_outliers": False,
+    }
+
+    kpi_df, daily_investment_df, _, _ = load_and_prepare_data(config)
+
+    assert config["period_days"] == 7
+    assert len(kpi_df) == 8
+    assert len(daily_investment_df) == 8

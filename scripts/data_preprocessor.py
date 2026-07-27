@@ -115,6 +115,105 @@ def robust_date_parsing(series, date_format=None):
     )
 
 
+def detect_cadence(dates):
+    """
+    Detecta a cadência (intervalo típico em dias) de uma série de datas.
+
+    Pega as datas únicas, ordena, calcula o diff() em dias entre datas
+    consecutivas e usa a mediana (robusta a alguns outliers/gaps pontuais).
+    Para facilitar o uso pelo resto do pipeline, a mediana é "encaixada"
+    (snapped) num valor canônico quando cai dentro de uma faixa de
+    tolerância:
+      - <= 1.5 dia    -> 1  (diário)
+      - 6 a 8 dias    -> 7  (semanal; tolera feriados/re-ancoramentos que
+                             deslocam o dia da semana em +-1 dia)
+      - 27 a 31 dias  -> 30 (mensal; cobre a variação natural de dias no mês)
+    Fora dessas faixas, retorna a mediana bruta arredondada (ex: cadência
+    quinzenal ~14 dias não tem faixa própria e sai como valor bruto,
+    conforme pedido no plano: "ou valor bruto se não bater em nenhum").
+
+    Com menos de 2 datas únicas não há diff() para calcular; retorna 1
+    (assume diário) como default seguro -- na prática não deve acontecer,
+    já que load_and_prepare_data só chama isto após validar que os
+    dataframes não estão vazios.
+    """
+    unique_dates = pd.to_datetime(pd.Series(dates)).dropna().unique()
+    unique_dates = pd.Series(unique_dates).sort_values().reset_index(drop=True)
+    if len(unique_dates) < 2:
+        return 1
+
+    median_days = unique_dates.diff().dropna().dt.days.median()
+
+    if median_days <= 1.5:
+        return 1
+    if 6 <= median_days <= 8:
+        return 7
+    if 27 <= median_days <= 31:
+        return 30
+    return int(round(median_days))
+
+
+def drop_partial_periods(df, date_col, cadence):
+    """
+    Descarta linhas cuja data representa um período "parcial" (mais curto
+    que 0.6x a cadência esperada), em qualquer posição da série -- início,
+    meio ou fim, não só nas bordas.
+
+    Uma data no MEIO da série só é considerada parcial se a distância até a
+    data anterior E até a próxima forem AMBAS menores que 0.6*cadência.
+    Checar só um dos lados não funciona em casos reais: quando um período
+    normal é "quebrado" no meio (ex: um re-ancoramento de virada de ano cria
+    uma data extra entre duas datas normais), as duas datas vizinhas à data
+    extra também ficam com só UM dos lados curto -- mas elas não são
+    parciais, é a data espremida entre as duas que é. Exigir os dois lados
+    curtos isola corretamente só essa data extra.
+
+    Nas pontas da série (primeira/última data), só existe um vizinho para
+    comparar, então a checagem usa só a distância disponível (ex: um
+    primeiro período de poucos dias antes do próximo, ou um último período
+    parcial sem "próxima" data para comparar).
+
+    Loga quantas e quais datas foram descartadas e retorna o dataframe
+    filtrado.
+    """
+    dates = pd.to_datetime(df[date_col])
+    unique_dates = pd.Series(dates.unique()).sort_values().reset_index(drop=True)
+    n = len(unique_dates)
+    if n < 2:
+        return df.reset_index(drop=True)
+
+    threshold = 0.6 * cadence
+    stub_dates = []
+    for i in range(n):
+        date = unique_dates[i]
+        dist_prev = (date - unique_dates[i - 1]).days if i > 0 else None
+        dist_next = (unique_dates[i + 1] - date).days if i < n - 1 else None
+        if dist_prev is not None and dist_next is not None:
+            is_stub = dist_prev < threshold and dist_next < threshold
+        else:
+            lone_dist = dist_prev if dist_prev is not None else dist_next
+            is_stub = lone_dist < threshold
+        if is_stub:
+            stub_dates.append(date)
+
+    if not stub_dates:
+        print(
+            f"   - Nenhum período parcial encontrado (cadência={cadence} dia(s), "
+            f"limiar={threshold:.1f} dia(s))."
+        )
+        return df.reset_index(drop=True)
+
+    mask = dates.isin(stub_dates)
+    dropped_str = ", ".join(
+        pd.Timestamp(d).strftime("%d/%m/%Y") for d in sorted(stub_dates)
+    )
+    print(
+        f"   - Períodos parciais descartados: {int(mask.sum())} linha(s) em "
+        f"{len(stub_dates)} data(s) (distância < {threshold:.1f} dia(s)): {dropped_str}"
+    )
+    return df[~mask].reset_index(drop=True)
+
+
 COLUMN_NAME_HINTS = {
     "date": ["date", "dates", "data", "day", "dia"],
     "channel": [
@@ -536,6 +635,44 @@ def load_and_prepare_data(config):
                 f"('{config['investment_file_path']}') após a limpeza. Verifique o formato de "
                 f"data, canal e investimento no arquivo."
             )
+
+        # --- Cadence Detection & Partial-Period Pruning ---
+        inv_cadence = detect_cadence(daily_investment_df["Date"])
+        kpi_cadence = detect_cadence(kpi_df["Date"])
+        if abs(inv_cadence - kpi_cadence) > 2:
+            raise ValueError(
+                f"Cadências divergentes entre o arquivo de investimento "
+                f"({inv_cadence} dia(s)) e o arquivo de performance ({kpi_cadence} dia(s)). "
+                f"Não é possível conciliar automaticamente séries com cadências diferentes -- "
+                f"verifique se ambos os arquivos reportam na mesma frequência "
+                f"(diária/semanal/mensal)."
+            )
+
+        n_inv_before = daily_investment_df["Date"].nunique()
+        n_kpi_before = kpi_df["Date"].nunique()
+        daily_investment_df = drop_partial_periods(daily_investment_df, "Date", inv_cadence)
+        kpi_df = drop_partial_periods(kpi_df, "Date", kpi_cadence)
+        n_inv_after = daily_investment_df["Date"].nunique()
+        n_kpi_after = kpi_df["Date"].nunique()
+
+        if daily_investment_df.empty or kpi_df.empty:
+            raise ValueError(
+                "Após descartar períodos parciais, não restaram linhas suficientes para "
+                "continuar a análise. Verifique a consistência das datas nos arquivos de "
+                "entrada."
+            )
+
+        config["period_days"] = inv_cadence
+        cadence_label = {1: "diária", 7: "semanal", 30: "mensal"}.get(
+            inv_cadence, "não-canônica"
+        )
+        print(
+            f"   - Cadência detectada: {cadence_label} ({inv_cadence} dia(s)), "
+            f"{n_inv_after} período(s) de investimento "
+            f"({n_inv_before - n_inv_after} parcial(is) descartado(s)), "
+            f"{n_kpi_after} período(s) de performance "
+            f"({n_kpi_before - n_kpi_after} parcial(is) descartado(s))."
+        )
 
         # --- Conditional Outlier Treatment ---
         outlier_config = config.get("treat_outliers", False)
