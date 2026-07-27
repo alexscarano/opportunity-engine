@@ -471,15 +471,27 @@ def guess_channel_col(file_path):
 
 def _numeric_looking_columns(df, exclude_hints=(), max_nan_ratio=0.9):
     """
-    Returns, in column order, the columns of a (small sample) dataframe whose
-    values mostly convert to numbers via robust_numeric_parsing -- i.e. no
-    more than max_nan_ratio come back NaN. Columns whose name matches
-    `exclude_hints` (typically the 'date' hints) are skipped entirely: a date
-    string like '01/01/2025' can accidentally look numeric once separators
-    are stripped by robust_numeric_parsing, which would otherwise make a date
-    column a false-positive "numeric" candidate.
+    Returns the columns of a (small sample) dataframe whose values mostly
+    convert to numbers via robust_numeric_parsing -- i.e. no more than
+    max_nan_ratio come back NaN -- sorted by NaN ratio ascending (cleanest
+    column first). Columns whose name matches `exclude_hints` (typically the
+    'date' hints) are skipped entirely: a date string like '01/01/2025' can
+    accidentally look numeric once separators are stripped by
+    robust_numeric_parsing, which would otherwise make a date column a
+    false-positive "numeric" candidate.
+
+    Known limitation: the date exclusion is name-based only (matched against
+    `exclude_hints`). A date column with an unusual header (e.g. "Periodo",
+    "Semana") that doesn't match any hint will NOT be excluded and could be
+    picked up as a false-positive numeric candidate. This is a narrow edge
+    case -- most date columns are named something recognizable -- and a
+    content-based guard (e.g. also trying robust_date_parsing on candidates)
+    risks false-exclusion of genuinely numeric columns that happen to parse
+    as dates (e.g. an 8-digit ID like 1012025). Left undone deliberately;
+    if this bites in practice, prefer fixing it by widening COLUMN_NAME_HINTS
+    for the offending header rather than adding a content-based guard here.
     """
-    result = []
+    candidates = []
     for col in df.columns:
         if col.strip().lower() in exclude_hints:
             continue
@@ -487,9 +499,11 @@ def _numeric_looking_columns(df, exclude_hints=(), max_nan_ratio=0.9):
         if len(series) == 0:
             continue
         parsed = robust_numeric_parsing(series, column_name=col)
-        if parsed.isna().mean() <= max_nan_ratio:
-            result.append(col)
-    return result
+        nan_ratio = parsed.isna().mean()
+        if nan_ratio <= max_nan_ratio:
+            candidates.append((col, nan_ratio))
+    candidates.sort(key=lambda item: item[1])
+    return [col for col, _ in candidates]
 
 
 def guess_investment_col(file_path):
@@ -507,6 +521,11 @@ def guess_investment_col(file_path):
         fallback = df.columns[-1]
         numeric_cols = _numeric_looking_columns(df, exclude_hints=COLUMN_NAME_HINTS["date"])
         if numeric_cols and fallback not in numeric_cols:
+            print(
+                f"   - AVISO: Coluna de investimento não configurada; o palpite posicional "
+                f"'{fallback}' não parece numérico. Usando '{numeric_cols[0]}' (candidata "
+                f"numérica mais limpa) automaticamente."
+            )
             return numeric_cols[0]
         return fallback
     except Exception:
@@ -545,6 +564,11 @@ def guess_kpi_col(file_path, user_kpi):
         fallback = df.columns[1] if len(df.columns) > 1 else df.columns[0]
         numeric_cols = _numeric_looking_columns(df, exclude_hints=COLUMN_NAME_HINTS["date"])
         if numeric_cols and fallback not in numeric_cols:
+            print(
+                f"   - AVISO: Coluna de KPI não configurada; o palpite posicional "
+                f"'{fallback}' não parece numérico. Usando '{numeric_cols[0]}' (candidata "
+                f"numérica mais limpa) automaticamente."
+            )
             return numeric_cols[0]
         return fallback
     except Exception:

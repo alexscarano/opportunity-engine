@@ -605,6 +605,55 @@ def test_guess_investment_col_falls_back_to_original_guess_when_nothing_numeric(
     assert guess_investment_col(path) == "Canal"
 
 
+def test_guess_kpi_col_numeric_fallback_logs_aviso_on_override(tmp_path, capsys):
+    """When the numeric-aware fallback picks a different column than the
+    naive positional guess would have, an AVISO must be printed -- this
+    feeds the generated config with no visible user-confirmation step.
+    """
+    path = _write_csv(
+        tmp_path / "performance.csv",
+        "Data;Canal;Metric\n01/01/2025;Pmax;1242\n05/01/2025;Pmax;2275\n12/01/2025;Pmax;2423\n",
+    )
+    guess_kpi_col(path, "Conversions")
+    assert "AVISO" in capsys.readouterr().out
+
+
+def test_guess_investment_col_numeric_fallback_logs_aviso_on_override(tmp_path, capsys):
+    path = _write_csv(
+        tmp_path / "investment.csv",
+        "Data;Metric;Canal\n01/01/2025;1242;Pmax\n05/01/2025;2275;Pmax\n12/01/2025;2423;Pmax\n",
+    )
+    guess_investment_col(path)
+    assert "AVISO" in capsys.readouterr().out
+
+
+def test_guess_kpi_col_numeric_fallback_prefers_cleanest_candidate(tmp_path):
+    """With two numeric-looking candidates surviving the filter, the dirtier
+    one (higher NaN ratio) appears first in column order but must lose to
+    the cleaner one (lower NaN ratio) -- first-match-wins would wrongly
+    pick 'ColA' here since it comes before 'ColB'.
+    """
+    path = _write_csv(
+        tmp_path / "performance.csv",
+        "Data;Canal;ColA;ColB\n"
+        "01/01/2025;Pmax;abc;100\n"
+        "05/01/2025;Pmax;200;200\n"
+        "12/01/2025;Pmax;300;300\n",
+    )
+    assert guess_kpi_col(path, "Conversions") == "ColB"
+
+
+def test_guess_investment_col_numeric_fallback_prefers_cleanest_candidate(tmp_path):
+    path = _write_csv(
+        tmp_path / "investment.csv",
+        "Data;ColA;ColB;Canal\n"
+        "01/01/2025;abc;100;Pmax\n"
+        "05/01/2025;200;200;Pmax\n"
+        "12/01/2025;300;300;Pmax\n",
+    )
+    assert guess_investment_col(path) == "ColB"
+
+
 # --- detect_cadence ---
 
 
