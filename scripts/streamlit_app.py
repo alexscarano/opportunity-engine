@@ -1750,6 +1750,9 @@ with tab3:
 
                     print(f"Error during data_preprocessor in Streamlit: {e}")
                     traceback.print_exc()
+                    st.warning(
+                        f"Não foi possível calcular o baseline real a partir dos dados de origem: {e}"
+                    )
 
             return (
                 config,
