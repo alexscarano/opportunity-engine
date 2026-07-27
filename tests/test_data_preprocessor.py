@@ -23,6 +23,7 @@ from data_preprocessor import (
     guess_kpi_col,
     detect_cadence,
     drop_partial_periods,
+    drop_bi_export_footer_rows,
 )
 
 
@@ -233,6 +234,138 @@ def test_robust_date_parsing_iso_format_regression():
         pd.Timestamp("2025-02-15"),
         pd.Timestamp("2025-03-20"),
     ]
+
+
+def test_robust_date_parsing_strips_midnight_time_suffix():
+    """Regression: exports (e.g. Excel/BI) often serialize a pure date column
+    as a full datetime string with the time fixed at midnight, like
+    '2025-01-01 00:00:00'. None of DATE_FORMAT_CANDIDATES include a time
+    component and pandas requires an exact format match, so every candidate
+    used to fail on 100% of rows -- this was the VW dataset crash.
+    """
+    s = pd.Series(
+        ["2025-01-01 00:00:00", "2025-01-02 00:00:00", "2025-01-03 00:00:00"]
+    )
+    result = robust_date_parsing(s)
+    assert result.tolist() == [
+        pd.Timestamp("2025-01-01"),
+        pd.Timestamp("2025-01-02"),
+        pd.Timestamp("2025-01-03"),
+    ]
+
+
+def test_robust_date_parsing_strips_non_midnight_time_suffix():
+    """Only the date matters downstream (daily/weekly aggregation), so a
+    non-midnight time component is discarded too, not just '00:00:00'.
+    """
+    s = pd.Series(["2025-01-01 14:35:20", "2025-01-02 09:00:00"])
+    result = robust_date_parsing(s)
+    assert result.tolist() == [
+        pd.Timestamp("2025-01-01"),
+        pd.Timestamp("2025-01-02"),
+    ]
+
+
+def test_drop_bi_export_footer_rows_strips_total_and_filtros_footer(caplog):
+    """Regression: Looker Studio / Google Data Studio exports can append a
+    'Total' summary row and a multi-line 'Filtros aplicados: ...' footer
+    note after the real data. Neither looks like a date, so they used to
+    blow up robust_date_parsing's 100%-coverage check on the whole file.
+    """
+    caplog.set_level(logging.INFO)
+    df = pd.DataFrame(
+        {
+            "Date": [
+                "2025-01-01",
+                "2025-01-02",
+                "2025-01-03",
+                "Total",
+                "Filtros aplicados:\nData é igual a ou está depois de "
+                "01/01/2025 e está antes de 01/01/2026\n"
+                "NOM_FUNNEL_STAGE é CONVERSION",
+            ],
+            "kpi": [10, 20, 30, 60, None],
+        }
+    )
+    result = drop_bi_export_footer_rows(df, "Date")
+    assert result["Date"].tolist() == ["2025-01-01", "2025-01-02", "2025-01-03"]
+    assert "AVISO" in caplog.text
+
+
+def test_drop_bi_export_footer_rows_leaves_clean_data_untouched():
+    df = pd.DataFrame({"Date": ["2025-01-01", "2025-01-02", "2025-01-03"]})
+    result = drop_bi_export_footer_rows(df, "Date")
+    assert result["Date"].tolist() == df["Date"].tolist()
+
+
+def test_drop_bi_export_footer_rows_handles_trailing_blank_line(caplog):
+    """Regression: a trailing blank line in the CSV (common after a footer
+    is edited/removed by hand, or just a stray final newline) becomes an
+    all-NaN row. On pandas' newer string dtype, plain astype(str) leaves
+    that NaN as a bare float instead of stringifying it to 'nan', so a naive
+    value.strip() crashes with \"'float' object has no attribute 'strip'\".
+    """
+    caplog.set_level(logging.INFO)
+    df = pd.DataFrame(
+        {
+            "Date": ["2025-01-01", "2025-01-02", "2025-01-03", None],
+            "kpi": [10, 20, 30, None],
+        }
+    )
+    result = drop_bi_export_footer_rows(df, "Date")
+    assert result["Date"].tolist() == ["2025-01-01", "2025-01-02", "2025-01-03"]
+
+
+def test_drop_bi_export_footer_rows_does_not_touch_mid_file_garbage():
+    """Only trailing rows are trimmed -- a bad value in the middle of the
+    file is real corruption and must still surface as a parsing error
+    downstream, not be silently swallowed here.
+    """
+    df = pd.DataFrame(
+        {"Date": ["2025-01-01", "Total", "2025-01-03"]}
+    )
+    result = drop_bi_export_footer_rows(df, "Date")
+    assert result["Date"].tolist() == ["2025-01-01", "Total", "2025-01-03"]
+
+
+def test_load_and_prepare_data_survives_looker_studio_footer_rows(tmp_path):
+    dates = pd.date_range("2025-01-01", periods=20).astype(str)
+    inv_rows = pd.DataFrame(
+        {
+            "dates": dates,
+            "product_group": ["PMAX"] * 20,
+            "total_revenue": range(20),
+        }
+    )
+    perf_rows = pd.DataFrame({"date": dates, "kpi": range(20)})
+
+    footer_note = (
+        "Filtros aplicados:\nData é igual a ou está depois de 01/01/2025 e "
+        "está antes de 01/01/2026\nNOM_FUNNEL_STAGE é CONVERSION"
+    )
+    inv_footer = pd.DataFrame(
+        {"dates": ["Total", footer_note], "product_group": ["", ""], "total_revenue": ["", ""]}
+    )
+    perf_footer = pd.DataFrame({"date": ["Total", footer_note], "kpi": ["", ""]})
+
+    inv_path = _write_csv(
+        tmp_path / "investment.csv",
+        pd.concat([inv_rows, inv_footer], ignore_index=True).to_csv(index=False),
+    )
+    perf_path = _write_csv(
+        tmp_path / "performance.csv",
+        pd.concat([perf_rows, perf_footer], ignore_index=True).to_csv(index=False),
+    )
+
+    config = {
+        "investment_file_path": inv_path,
+        "performance_file_path": perf_path,
+        "performance_kpi_column": "kpi",
+        "treat_outliers": False,
+    }
+    kpi_df, daily_investment_df, _, _ = load_and_prepare_data(config)
+    assert len(kpi_df) == 20
+    assert len(daily_investment_df) == 20
 
 
 def test_robust_date_parsing_configured_format_not_fully_covering_falls_through(caplog):

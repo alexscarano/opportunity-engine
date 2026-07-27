@@ -49,6 +49,81 @@ DATE_FORMAT_CANDIDATES = [
     "%d.%m.%Y",
 ]
 
+# ponytail: only the time-of-day is stripped, not timezone offsets or AM/PM
+# markers -- add those patterns here if a source ever needs them.
+_TRAILING_TIME_RE = r"[ T]\d{1,2}:\d{2}(:\d{2})?(\.\d+)?\s*$"
+
+
+def _strip_trailing_time(series):
+    """Drop a ' HH:MM:SS' (or 'THH:MM:SS') suffix from date-like strings.
+
+    Exports from Excel/BI tools often serialize a pure date column as a full
+    datetime with the time fixed at midnight (e.g. '2025-01-01 00:00:00').
+    None of DATE_FORMAT_CANDIDATES account for that suffix, and pandas
+    requires an exact format match, so every candidate would otherwise fail
+    on 100% of rows. Only the date part matters downstream (data is
+    aggregated daily/weekly), so the time is safe to discard.
+    """
+    # pandas 3.x defaults string columns to StringDtype instead of object,
+    # so checking `dtype == object` misses them -- is_string_dtype covers both.
+    if not pd.api.types.is_string_dtype(series):
+        return series
+    mask = series.notna()
+    stripped = series.copy()
+    stripped[mask] = (
+        stripped[mask].astype(str).str.replace(_TRAILING_TIME_RE, "", regex=True)
+    )
+    return stripped
+
+
+_BI_FOOTER_LITERALS = {"total", "totais", "total geral", "subtotal"}
+
+
+def drop_bi_export_footer_rows(df, date_col, max_rows=10):
+    """Drop trailing 'Total'/'Filtros aplicados' rows some BI export tools
+    (Looker Studio / Google Data Studio in particular) tack onto a CSV: a
+    summary row and a multi-line filter-description footer. Neither is real
+    data and neither looks like a date, so they'd otherwise fail the
+    100%-coverage check in robust_date_parsing and blow up the whole file.
+
+    Only trims from the very end, stopping at the first row that doesn't
+    look like footer junk -- a non-date value found in the middle of the
+    file is real corruption and should still raise loudly there, not be
+    silently swallowed here.
+    """
+    if date_col not in df.columns or df.empty:
+        return df
+
+    # fillna before astype: on pandas' 'str' dtype, astype(str) alone leaves
+    # missing values as bare float NaN instead of stringifying them, which
+    # breaks .strip() below (a trailing blank line in the CSV becomes an
+    # all-NaN row).
+    values = df[date_col].fillna("").astype(str).tolist()
+    drop_count = 0
+    for value in reversed(values):
+        if drop_count >= max_rows:
+            break
+        stripped = value.strip()
+        looks_like_footer = (
+            stripped == ""
+            or "\n" in value
+            or stripped.lower() in _BI_FOOTER_LITERALS
+            or stripped.lower().startswith("filtro")
+        )
+        if not looks_like_footer:
+            break
+        drop_count += 1
+
+    if drop_count == 0:
+        return df
+
+    dropped_examples = values[-drop_count:]
+    log.warning(
+        f"   - AVISO: {drop_count} linha(s) de rodapé de exportação (ex.: 'Total', "
+        f"'Filtros aplicados') descartada(s) no fim do arquivo. Exemplos: {dropped_examples}"
+    )
+    return df.iloc[:-drop_count].reset_index(drop=True)
+
 
 def robust_date_parsing(series, date_format=None):
     """
@@ -72,6 +147,8 @@ def robust_date_parsing(series, date_format=None):
         return pd.to_datetime(series, errors="coerce")
 
     column_name = series.name or "data"
+    raw_series = series
+    series = _strip_trailing_time(series)
 
     if date_format:
         parsed = pd.to_datetime(series, format=date_format, errors="coerce")
@@ -100,7 +177,7 @@ def robust_date_parsing(series, date_format=None):
         return next(iter(matches.values()))
 
     if len(matches) > 1:
-        examples = series.dropna().unique()[:3].tolist()
+        examples = raw_series.dropna().unique()[:3].tolist()
         raise ValueError(
             f"Não foi possível determinar o formato de data da coluna '{column_name}' de forma "
             f"inequívoca: os formatos {list(matches.keys())} parseiam 100% das linhas mas produzem "
@@ -109,7 +186,7 @@ def robust_date_parsing(series, date_format=None):
         )
 
     failing_mask = series.notna() & best_parsed.isna()
-    examples = series[failing_mask].unique()[:3].tolist()
+    examples = raw_series[failing_mask].unique()[:3].tolist()
     raise ValueError(
         f"Não foi possível parsear a coluna de data '{column_name}': nenhum formato testado "
         f"({DATE_FORMAT_CANDIDATES}) cobriu 100% das linhas. Melhor formato testado: '{best_fmt}' "
@@ -619,6 +696,7 @@ def load_and_prepare_data(config):
                     columns={trends_date_col: "Date", trends_value_col: "Generic Searches"},
                     inplace=True,
                 )
+                trends_df = drop_bi_export_footer_rows(trends_df, "Date")
                 trends_df["Generic Searches"] = robust_numeric_parsing(
                     trends_df["Generic Searches"], column_name="Generic Searches"
                 )
@@ -665,6 +743,7 @@ def load_and_prepare_data(config):
             "coluna de KPI do arquivo de performance",
         )
         kpi_df.rename(columns={kpi_date_col: "Date", kpi_value_col: "kpi"}, inplace=True)
+        kpi_df = drop_bi_export_footer_rows(kpi_df, "Date")
         kpi_raw_values = kpi_df["kpi"]
         kpi_df["kpi"] = robust_numeric_parsing(kpi_df["kpi"], column_name="kpi")
         kpi_nan_ratio = kpi_df["kpi"].isna().mean() if len(kpi_df) else 0
@@ -705,6 +784,7 @@ def load_and_prepare_data(config):
             },
             inplace=True,
         )
+        daily_investment_df = drop_bi_export_footer_rows(daily_investment_df, "Date")
 
         # Standardize product group names: strip whitespace and normalize case so
         # the same channel exported with inconsistent casing doesn't fragment
