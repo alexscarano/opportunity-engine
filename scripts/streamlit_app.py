@@ -4,6 +4,8 @@ import numpy as np
 import json
 import os
 import time
+import threading
+import queue
 import plotly.express as px
 import plotly.graph_objects as go
 import logging
@@ -1471,34 +1473,78 @@ with tab1:
             log_lines = []
             lines_since_render = 0
             last_render_time = time.monotonic()
+            last_line_time = time.monotonic()
 
             def render_log():
+                shown = log_lines[-300:]
+                header = f"Engine de Oportunidades Rodando... ({len(log_lines)} linhas"
+                if len(log_lines) > len(shown):
+                    header += f", exibindo as últimas {len(shown)}"
+                header += ")"
+                idle = time.monotonic() - last_line_time
+                if idle >= 3:
+                    header += f" -- etapa em andamento há {int(idle)}s"
                 log_container.code(
-                    "Engine de Oportunidades Rodando...\n"
-                    + "\n".join(log_lines[-300:]),
+                    header + "\n" + "\n".join(shown),
                     language="shell",
                     height=400,
                 )
 
-            for line in iter(process.stdout.readline, ""):
-                log_lines.append(line.rstrip("\n"))
-                lines_since_render += 1
-                now = time.monotonic()
-                if should_render(lines_since_render, now - last_render_time):
-                    render_log()
-                    last_render_time = now
-                    lines_since_render = 0
+            # ponytail: o process.wait(timeout=900) anterior era código morto -- quando
+            # o engine trava (ex.: retry silencioso de 503 do Gemini) ele trava DENTRO
+            # do readline abaixo e nunca chega no wait(). O watchdog mata o processo,
+            # o readline recebe EOF e o loop termina.
+            killed = threading.Event()
+
+            def _kill_on_timeout():
+                killed.set()
+                process.kill()
+
+            watchdog = threading.Timer(900, _kill_on_timeout)
+            watchdog.daemon = True
+            watchdog.start()
+
+            # ponytail: readline bloqueia, e o painel só era redesenhado quando uma
+            # linha NOVA chegava. Numa pausa longa (chamada ao Gemini) a tela
+            # congelava sem ter mostrado as últimas linhas lidas -- é isso que
+            # parecia travamento. A thread lê o pipe e o loop principal redesenha
+            # também quando a fila fica quieta, mostrando há quanto tempo espera.
+            line_queue = queue.Queue()
+
+            def _pump_stdout():
+                for line in iter(process.stdout.readline, ""):
+                    line_queue.put(line)
+                line_queue.put(None)
+
+            threading.Thread(target=_pump_stdout, daemon=True).start()
+
+            try:
+                while True:
+                    try:
+                        line = line_queue.get(timeout=1.0)
+                    except queue.Empty:
+                        render_log()
+                        last_render_time = time.monotonic()
+                        lines_since_render = 0
+                        continue
+                    if line is None:
+                        break
+                    log_lines.append(line.rstrip("\n"))
+                    last_line_time = time.monotonic()
+                    lines_since_render += 1
+                    now = time.monotonic()
+                    if should_render(lines_since_render, now - last_render_time):
+                        render_log()
+                        last_render_time = now
+                        lines_since_render = 0
+            finally:
+                watchdog.cancel()
 
             process.stdout.close()
             render_log()  # final render: guarantee the last lines are shown
 
-            timed_out = False
-            try:
-                return_code = process.wait(timeout=900)
-            except subprocess.TimeoutExpired:
-                timed_out = True
-                process.kill()
-                process.wait()
+            return_code = process.wait()
+            timed_out = killed.is_set()
 
             if timed_out:
                 status_container.error(
