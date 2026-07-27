@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import json
 import os
+import time
 import plotly.express as px
 import plotly.graph_objects as go
 import logging
@@ -91,6 +92,12 @@ def escape_markdown_dollars(obj):
     elif isinstance(obj, list):
         return [escape_markdown_dollars(x) for x in obj]
     return obj
+
+
+def should_render(lines_since_last_render, seconds_since_last_render, min_lines=25, min_seconds=0.4):
+    """Throttle decision for the live subprocess-log panel: render if either
+    enough new lines piled up or enough time passed since the last render."""
+    return lines_since_last_render >= min_lines or seconds_since_last_render >= min_seconds
 
 
 def _load_event_narrative(selected_dir):
@@ -1396,19 +1403,45 @@ with tab1:
                 cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
             )
 
-            full_log = ""
-            for line in iter(process.stdout.readline, ""):
-                full_log += line
+            log_lines = []
+            lines_since_render = 0
+            last_render_time = time.monotonic()
+
+            def render_log():
                 log_container.code(
-                    f"Engine de Oportunidades Rodando...\n{full_log}",
+                    "Engine de Oportunidades Rodando...\n"
+                    + "\n".join(log_lines[-300:]),
                     language="shell",
                     height=400,
                 )
 
-            process.stdout.close()
-            return_code = process.wait()
+            for line in iter(process.stdout.readline, ""):
+                log_lines.append(line.rstrip("\n"))
+                lines_since_render += 1
+                now = time.monotonic()
+                if should_render(lines_since_render, now - last_render_time):
+                    render_log()
+                    last_render_time = now
+                    lines_since_render = 0
 
-            if return_code == 0:
+            process.stdout.close()
+            render_log()  # final render: guarantee the last lines are shown
+
+            timed_out = False
+            try:
+                return_code = process.wait(timeout=900)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                process.kill()
+                process.wait()
+
+            if timed_out:
+                status_container.error(
+                    "A execução do motor excedeu o limite de 15 minutos (900 "
+                    "segundos) e foi interrompida.\n\nÚltimas linhas capturadas:\n"
+                    + "\n".join(log_lines[-300:])
+                )
+            elif return_code == 0:
                 st.session_state["active_config_path"] = config_path_gen
                 st.session_state["show_run_success_balloons"] = True
                 st.rerun()
