@@ -101,6 +101,10 @@ _RULES = [
         _banner("Avaliando {0} possíveis picos de investimento..."),
     ),
     (
+        r"▶ Analyzing Event \[(\d+/\d+)\]:\s*(.*?)\s*on\s*(.*)",
+        _divider("▶ [{0}] Analisando impacto do pico em '{1}' no dia {2}"),
+    ),
+    (
         r"▶ Analyzing Event:\s*(.*?)\s*on\s*(.*)",
         _divider("▶ Analisando impacto do pico em '{0}' no dia {1}"),
     ),

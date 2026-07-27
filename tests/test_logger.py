@@ -77,6 +77,24 @@ class TestLogger(unittest.TestCase):
         self.assertIsNone(translate_line("  var *= np.divide(...)"))
         self.assertIsNone(translate_line("  return get_prediction_index(...)"))
 
+    def test_event_counter_and_threshold_warning(self):
+        counted = translate_line("▶ Analyzing Event [12/43]: PMAX on 2026-01-12")
+        self.assertIn("[12/43]", counted)
+        self.assertIn("'PMAX'", counted)
+        self.assertIn("2026-01-12", counted)
+
+        # Legacy line without the counter must still translate.
+        self.assertIn(
+            "'PMAX'", translate_line("▶ Analyzing Event: PMAX on 2026-01-12")
+        )
+
+        warning = translate_line(
+            "   - WARNING: threshold flagged 43 of 78 periods for 'PMAX' (55%)."
+        )
+        self.assertIn("43 de 78", warning)
+        self.assertIn("'PMAX'", warning)
+        self.assertIn("55%", warning)
+
     def test_log_context_suppression(self):
         # We redirect sys.stdout inside LogContext, but we want to capture what LogContext writes to its parent stdout.
         # We can mock the stdout property of LogContext.

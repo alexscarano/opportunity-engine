@@ -171,7 +171,10 @@ def main(config, args):
                         )
                     )
 
-                    for index, event in candidate_events_df.iterrows():
+                    total_candidates = len(candidate_events_df)
+                    for event_num, (index, event) in enumerate(
+                        candidate_events_df.iterrows(), start=1
+                    ):
                         pre_period = [
                             event["start_date"],
                             (
@@ -184,7 +187,7 @@ def main(config, args):
                         print(
                             f"\n"
                             + "-" * 50
-                            + f"\n▶ Analyzing Event: {event['product_group']} on {event['intervention_date']}"
+                            + f"\n▶ Analyzing Event [{event_num}/{total_candidates}]: {event['product_group']} on {event['intervention_date']}"
                         )
 
                         (
