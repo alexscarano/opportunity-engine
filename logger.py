@@ -87,6 +87,12 @@ _RULES = [
         "   - Analisando {0} canais de anúncio em busca de grandes alterações...",
     ),
     (
+        r"WARNING: threshold flagged (\d+) of (\d+) periods for '([^']+)' \(([^)]+)\)",
+        "   - AVISO: o limiar marcou {0} de {1} períodos do canal '{2}' como evento "
+        "({3}). Isso é oscilação normal de verba, não pico: aumente a 'Var. Mínima "
+        "de Aumento/Queda de Investimento' para obter uma lista de eventos com significado.",
+    ),
+    (
         r"Detected events saved to:",
         "   - Picos de investimento detectados salvos com sucesso.",
     ),

@@ -1125,7 +1125,7 @@ with tab1:
                     "Var. Mínima de Aumento de Investimento (%)",
                     min_value=1,
                     max_value=100,
-                    value=20,
+                    value=40,
                     help="Quanto o investimento semanal precisa subir (vs. média das 12 semanas "
                     "anteriores) pra ser detectado como um 'pico' a analisar. Valor baixo encontra "
                     "mais eventos candidatos, inclusive picos pequenos/ruído; valor alto só "
@@ -1135,7 +1135,7 @@ with tab1:
                     "Var. Mínima de Queda de Investimento (%)",
                     min_value=1,
                     max_value=100,
-                    value=10,
+                    value=30,
                     help="Mesma lógica do campo acima, mas pra quedas de investimento: quanto a "
                     "verba semanal precisa cair (vs. média das 12 semanas anteriores) pra virar um "
                     "evento de 'corte de verba' a analisar.",

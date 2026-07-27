@@ -177,6 +177,17 @@ def find_events(
                 | (weekly_investment_df["change_ratio"] < decrease_ratio)
             ]
 
+            # Um "evento" só é interpretável se for excecional. Quando mais de um
+            # quarto dos períodos é sinalizado, o limiar está capturando oscilação
+            # normal de verba e a lista de candidatos vira ruído.
+            flagged_share = len(significant_changes) / len(weekly_investment_df)
+            if flagged_share > 0.25:
+                print(
+                    f"   - WARNING: threshold flagged {len(significant_changes)} of "
+                    f"{len(weekly_investment_df)} periods for '{product}' "
+                    f"({flagged_share:.0%})."
+                )
+
             for _, row in significant_changes.iterrows():
                 all_individual_events.append(
                     {
