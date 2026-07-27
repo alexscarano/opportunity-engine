@@ -476,7 +476,7 @@ def main(config, args):
             # Reduces to the historical "* 30" for daily data (period_days=1);
             # scales correctly for weekly/monthly cadences instead of
             # overstating monthly projections by ~30/period_days x.
-            monthly_factor = 30 / period_days
+            monthly_factor = 30 / (period_days or 1)
 
             # --- DYNAMICALLY SET TOTAL INVESTMENT FROM MODEL BASELINE ---
             total_monthly_investment = 0

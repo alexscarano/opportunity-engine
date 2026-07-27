@@ -87,8 +87,9 @@ def periods_to_days(days_config, period_days, min_periods, label=""):
     """
     period_days = period_days if period_days else 1
     raw_periods = days_config / period_days
-    periods = max(min_periods, math.ceil(raw_periods))
-    if periods > raw_periods:
+    ceiled_periods = math.ceil(raw_periods)
+    periods = max(min_periods, ceiled_periods)
+    if periods > ceiled_periods:
         print(
             f"   - AVISO: janela '{label}' configurada em {days_config} dia(s) "
             f"renderia menos que o mínimo de {min_periods} período(s) de dados "
