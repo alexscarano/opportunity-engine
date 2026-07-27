@@ -1026,22 +1026,25 @@ with tab1:
             st.subheader("Parâmetros do Negócio")
             kpi_column = st.text_input(
                 "Coluna do KPI no CSV de Performance",
-                value="Sessions",
+                value=st.session_state.get("ai_suggested_kpi_column", "Sessions"),
                 help="Nome exato da coluna (ex: Sessions, Conversions, Leads).",
             )
             kpi_is_monetary = st.checkbox(
                 "O KPI já está em R$ (ex: Faturamento, Receita)",
-                value=False,
+                value=st.session_state.get("ai_suggested_kpi_is_monetary", False),
                 help="Marque se a coluna de KPI já é o valor monetário final (não uma contagem "
                 "de conversões/leads). Isso ignora Taxa de Conversão e Ticket Médio abaixo, e "
                 "troca CPA/iCPA por ROAS/iROAS no dashboard.",
             )
+            _opt_labels = [
+                "Maximizar Volume de Conversões (Leads, Vendas, etc.)",
+                "Maximizar Receita / Faturamento (Revenue)",
+            ]
+            _suggested_target = st.session_state.get("ai_suggested_optimization_target")
             optimization_target_label = st.selectbox(
                 "Objetivo da Otimização",
-                options=[
-                    "Maximizar Volume de Conversões (Leads, Vendas, etc.)",
-                    "Maximizar Receita / Faturamento (Revenue)",
-                ],
+                options=_opt_labels,
+                index=1 if _suggested_target == "REVENUE" else 0,
                 help="Define o que a aba Elasticidade tenta maximizar ao recomendar como dividir "
                 "a verba entre canais. 'Volume' busca o maior número de conversões; 'Receita' usa "
                 "o Ticket Médio para buscar o maior faturamento. Também decide se o dashboard "
