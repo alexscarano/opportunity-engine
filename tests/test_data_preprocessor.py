@@ -61,6 +61,16 @@ def test_column_name_hints_content():
         "conversoes",
         "cliques",
         "clicks",
+        "leads",
+        "lead",
+        "vendas",
+        "sales",
+        "sessoes",
+        "sessões",
+        "pedidos",
+        "orders",
+        "transacoes",
+        "transações",
     ]
 
 
@@ -523,6 +533,78 @@ def test_guess_helpers_return_defaults_on_empty_or_missing_path():
     assert guess_kpi_col("", "Sessions") == "Sessions"
 
 
+# --- New KPI hints (leads/vendas/sessões/etc.) ---
+
+
+def test_guess_kpi_col_hint_matches_leads_regression(tmp_path):
+    """Reproduces the real exemplo_csv/performance_pmax_semanal.csv shape
+    (Data;Canal;Leads) with a user-typed KPI name ('Conversions') that
+    doesn't match anything in the file. Before this task, 'leads' wasn't a
+    KPI hint, so this fell through to the purely positional fallback
+    (df.columns[1]), which picks the text 'Canal' column. With 'leads' now
+    a hint, the hint match resolves it directly -- 'Leads' is returned
+    without ever reaching the positional/numeric-aware fallback.
+    """
+    path = _write_csv(
+        tmp_path / "performance.csv",
+        "Data;Canal;Leads\n01/01/2025;Pmax;1242\n05/01/2025;Pmax;2275\n",
+    )
+    assert guess_kpi_col(path, "Conversions") == "Leads"
+
+
+def test_guess_kpi_col_hint_matches_vendas_and_sessoes(tmp_path):
+    path_vendas = _write_csv(tmp_path / "vendas.csv", "date,Vendas\n2025-01-01,10\n")
+    assert guess_kpi_col(path_vendas, "Conversions") == "Vendas"
+
+    path_sessoes = _write_csv(tmp_path / "sessoes.csv", "date,Sessões\n2025-01-01,10\n")
+    assert guess_kpi_col(path_sessoes, "Conversions") == "Sessões"
+
+
+# --- Numeric-aware last-resort fallback in guess_kpi_col / guess_investment_col ---
+
+
+def test_guess_kpi_col_numeric_fallback_skips_text_positional_column(tmp_path):
+    """Data;Canal;Metric -- 'Metric' isn't a recognized hint, so hint matching
+    fails and the function must fall through to the positional guess
+    (df.columns[1] == 'Canal', a repeated text value). The numeric-aware
+    check must discard 'Canal' (0% numeric) and pick 'Metric' instead.
+    """
+    path = _write_csv(
+        tmp_path / "performance.csv",
+        "Data;Canal;Metric\n01/01/2025;Pmax;1242\n05/01/2025;Pmax;2275\n12/01/2025;Pmax;2423\n",
+    )
+    assert guess_kpi_col(path, "Conversions") == "Metric"
+
+
+def test_guess_kpi_col_falls_back_to_original_guess_when_nothing_numeric(tmp_path):
+    """When NO remaining candidate column looks numeric, the function must
+    still return the original positional guess (not crash, not invent a new
+    failure mode) -- downstream validation in load_and_prepare_data is
+    responsible for catching this with a clear error.
+    """
+    path = _write_csv(
+        tmp_path / "performance.csv",
+        "Data;Canal;Regiao\n01/01/2025;Pmax;Sul\n05/01/2025;Pmax;Norte\n",
+    )
+    assert guess_kpi_col(path, "Conversions") == "Canal"
+
+
+def test_guess_investment_col_numeric_fallback_skips_text_positional_column(tmp_path):
+    path = _write_csv(
+        tmp_path / "investment.csv",
+        "Data;Metric;Canal\n01/01/2025;1242;Pmax\n05/01/2025;2275;Pmax\n12/01/2025;2423;Pmax\n",
+    )
+    assert guess_investment_col(path) == "Metric"
+
+
+def test_guess_investment_col_falls_back_to_original_guess_when_nothing_numeric(tmp_path):
+    path = _write_csv(
+        tmp_path / "investment.csv",
+        "Data;Regiao;Canal\n01/01/2025;Sul;Pmax\n05/01/2025;Norte;Pmax\n",
+    )
+    assert guess_investment_col(path) == "Canal"
+
+
 # --- detect_cadence ---
 
 
@@ -710,3 +792,192 @@ def test_load_and_prepare_data_populates_config_period_days_for_weekly_data(tmp_
     assert config["period_days"] == 7
     assert len(kpi_df) == 8
     assert len(daily_investment_df) == 8
+
+
+# --- Post-load NaN validation (>50%) ---
+
+
+def test_load_and_prepare_data_kpi_over_50pct_nan_raises_specific_error(tmp_path):
+    """The wrong KPI column resolves to mostly text -- must raise a specific
+    error naming the column, the file, and example values instead of the
+    generic 'Nenhuma linha válida restou'.
+    """
+    investment_path = _write_csv(
+        tmp_path / "investment.csv",
+        "dates,product_group,total_revenue\n"
+        "2025-01-01,GOOGLE,100\n2025-01-02,GOOGLE,200\n2025-01-03,GOOGLE,300\n",
+    )
+    performance_path = _write_csv(
+        tmp_path / "performance.csv",
+        "date,kpi\n2025-01-01,abc\n2025-01-02,xyz\n2025-01-03,10\n",
+    )
+    config = {
+        "investment_file_path": investment_path,
+        "performance_file_path": performance_path,
+        "performance_kpi_column": "kpi",
+        "date_formats": {
+            "investment_file": "%Y-%m-%d",
+            "performance_file": "%Y-%m-%d",
+        },
+        "treat_outliers": False,
+    }
+
+    with pytest.raises(Exception) as exc_info:
+        load_and_prepare_data(config)
+
+    message = str(exc_info.value)
+    assert "kpi" in message
+    assert performance_path in message
+    assert "abc" in message and "xyz" in message
+    assert "Nenhuma linha válida restou" not in message
+
+
+def test_load_and_prepare_data_investment_over_50pct_nan_raises_specific_error(tmp_path):
+    investment_path = _write_csv(
+        tmp_path / "investment.csv",
+        "dates,product_group,total_revenue\n"
+        "2025-01-01,GOOGLE,abc\n2025-01-02,GOOGLE,xyz\n2025-01-03,GOOGLE,300\n",
+    )
+    performance_path = _write_csv(
+        tmp_path / "performance.csv",
+        "date,kpi\n2025-01-01,10\n2025-01-02,20\n2025-01-03,30\n",
+    )
+    config = {
+        "investment_file_path": investment_path,
+        "performance_file_path": performance_path,
+        "performance_kpi_column": "kpi",
+        "date_formats": {
+            "investment_file": "%Y-%m-%d",
+            "performance_file": "%Y-%m-%d",
+        },
+        "treat_outliers": False,
+    }
+
+    with pytest.raises(Exception) as exc_info:
+        load_and_prepare_data(config)
+
+    message = str(exc_info.value)
+    assert "total_revenue" in message
+    assert investment_path in message
+    assert "abc" in message and "xyz" in message
+    assert "Nenhuma linha válida restou" not in message
+
+
+# --- Exception chaining (raise ... from e) ---
+
+
+def test_load_and_prepare_data_file_not_found_preserves_original_cause(tmp_path):
+    config = {
+        "investment_file_path": str(tmp_path / "missing_investment.csv"),
+        "performance_file_path": str(tmp_path / "missing_performance.csv"),
+        "performance_kpi_column": "kpi",
+        "date_formats": {},
+        "treat_outliers": False,
+    }
+
+    with pytest.raises(FileNotFoundError) as exc_info:
+        load_and_prepare_data(config)
+
+    assert exc_info.value.__cause__ is not None
+    assert isinstance(exc_info.value.__cause__, FileNotFoundError)
+
+
+def test_load_and_prepare_data_unexpected_error_preserves_original_cause(tmp_path):
+    """Uses the same >50%-NaN scenario as above, but asserts specifically on
+    exception chaining: the wrapper Exception's __cause__ must be the
+    original ValueError, not swallowed.
+    """
+    investment_path = _write_csv(
+        tmp_path / "investment.csv",
+        "dates,product_group,total_revenue\n"
+        "2025-01-01,GOOGLE,abc\n2025-01-02,GOOGLE,xyz\n2025-01-03,GOOGLE,qux\n",
+    )
+    performance_path = _write_csv(
+        tmp_path / "performance.csv",
+        "date,kpi\n2025-01-01,10\n2025-01-02,20\n2025-01-03,30\n",
+    )
+    config = {
+        "investment_file_path": investment_path,
+        "performance_file_path": performance_path,
+        "performance_kpi_column": "kpi",
+        "date_formats": {
+            "investment_file": "%Y-%m-%d",
+            "performance_file": "%Y-%m-%d",
+        },
+        "treat_outliers": False,
+    }
+
+    with pytest.raises(Exception) as exc_info:
+        load_and_prepare_data(config)
+
+    assert exc_info.value.__cause__ is not None
+    assert isinstance(exc_info.value.__cause__, ValueError)
+
+
+# --- Performance-file duplicate-date aggregation (channel breakdown) ---
+
+
+def test_load_and_prepare_data_dedups_duplicate_performance_dates_with_warning(tmp_path, capsys):
+    """Simulates a per-channel breakdown in the performance file (two rows
+    for the same date). Must print an AVISO and sum the KPI values per date
+    explicitly, instead of leaving the later merge with investment_pivot to
+    silently fan out rows.
+    """
+    investment_path = _write_csv(
+        tmp_path / "investment.csv",
+        "dates,product_group,total_revenue\n"
+        "2025-01-01,GOOGLE,100\n2025-01-02,GOOGLE,200\n2025-01-03,GOOGLE,300\n",
+    )
+    performance_path = _write_csv(
+        tmp_path / "performance.csv",
+        "date,kpi\n"
+        "2025-01-01,10\n2025-01-01,5\n"
+        "2025-01-02,20\n"
+        "2025-01-03,30\n",
+    )
+    config = {
+        "investment_file_path": investment_path,
+        "performance_file_path": performance_path,
+        "performance_kpi_column": "kpi",
+        "date_formats": {
+            "investment_file": "%Y-%m-%d",
+            "performance_file": "%Y-%m-%d",
+        },
+        "treat_outliers": False,
+    }
+
+    kpi_df, daily_investment_df, _, _ = load_and_prepare_data(config)
+
+    assert "AVISO" in capsys.readouterr().out
+    assert len(kpi_df) == 3
+    row = kpi_df[kpi_df["Date"] == pd.Timestamp("2025-01-01")]
+    assert row["kpi"].iloc[0] == 15.0
+    assert len(daily_investment_df) == 3
+
+
+def test_load_and_prepare_data_no_duplicate_dates_is_noop(tmp_path, capsys):
+    investment_path = _write_csv(
+        tmp_path / "investment.csv",
+        "dates,product_group,total_revenue\n"
+        "2025-01-01,GOOGLE,100\n2025-01-02,GOOGLE,200\n2025-01-03,GOOGLE,300\n",
+    )
+    performance_path = _write_csv(
+        tmp_path / "performance.csv",
+        "date,kpi\n2025-01-01,10\n2025-01-02,20\n2025-01-03,30\n",
+    )
+    config = {
+        "investment_file_path": investment_path,
+        "performance_file_path": performance_path,
+        "performance_kpi_column": "kpi",
+        "date_formats": {
+            "investment_file": "%Y-%m-%d",
+            "performance_file": "%Y-%m-%d",
+        },
+        "treat_outliers": False,
+    }
+
+    kpi_df, _, _, _ = load_and_prepare_data(config)
+
+    out = capsys.readouterr().out
+    assert "data duplicada" not in out
+    assert kpi_df["kpi"].tolist() == [10.0, 20.0, 30.0]

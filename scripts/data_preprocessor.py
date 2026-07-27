@@ -251,7 +251,25 @@ COLUMN_NAME_HINTS = {
         "volume",
         "generic searches",
     ],
-    "kpi": ["kpi", "sessions", "conversions", "revenue", "conversoes", "cliques", "clicks"],
+    "kpi": [
+        "kpi",
+        "sessions",
+        "conversions",
+        "revenue",
+        "conversoes",
+        "cliques",
+        "clicks",
+        "leads",
+        "lead",
+        "vendas",
+        "sales",
+        "sessoes",
+        "sessões",
+        "pedidos",
+        "orders",
+        "transacoes",
+        "transações",
+    ],
 }
 
 
@@ -451,16 +469,46 @@ def guess_channel_col(file_path):
         return "product_group"
 
 
+def _numeric_looking_columns(df, exclude_hints=(), max_nan_ratio=0.9):
+    """
+    Returns, in column order, the columns of a (small sample) dataframe whose
+    values mostly convert to numbers via robust_numeric_parsing -- i.e. no
+    more than max_nan_ratio come back NaN. Columns whose name matches
+    `exclude_hints` (typically the 'date' hints) are skipped entirely: a date
+    string like '01/01/2025' can accidentally look numeric once separators
+    are stripped by robust_numeric_parsing, which would otherwise make a date
+    column a false-positive "numeric" candidate.
+    """
+    result = []
+    for col in df.columns:
+        if col.strip().lower() in exclude_hints:
+            continue
+        series = df[col]
+        if len(series) == 0:
+            continue
+        parsed = robust_numeric_parsing(series, column_name=col)
+        if parsed.isna().mean() <= max_nan_ratio:
+            result.append(col)
+    return result
+
+
 def guess_investment_col(file_path):
     """Guesses the investment column of an uploaded CSV to pre-fill the UI."""
     if not file_path:
         return "total_revenue"
     try:
-        df = read_csv_robust(file_path, nrows=0)
+        df = read_csv_robust(file_path, nrows=50)
         for col in df.columns:
             if col.lower() in COLUMN_NAME_HINTS["investment"]:
                 return col
-        return df.columns[-1]
+        # Last resort: purely positional guess. Before trusting it blindly,
+        # check whether it actually looks numeric -- if not, and some other
+        # column does, prefer that one instead of a text column.
+        fallback = df.columns[-1]
+        numeric_cols = _numeric_looking_columns(df, exclude_hints=COLUMN_NAME_HINTS["date"])
+        if numeric_cols and fallback not in numeric_cols:
+            return numeric_cols[0]
+        return fallback
     except Exception:
         return "total_revenue"
 
@@ -484,13 +532,21 @@ def guess_kpi_col(file_path, user_kpi):
     if not file_path:
         return user_kpi
     try:
-        df = read_csv_robust(file_path, nrows=0)
+        df = read_csv_robust(file_path, nrows=50)
         if user_kpi in df.columns:
             return user_kpi
         for col in df.columns:
             if col.lower() in COLUMN_NAME_HINTS["kpi"]:
                 return col
-        return df.columns[1] if len(df.columns) > 1 else df.columns[0]
+        # Last resort: purely positional guess. Before trusting it blindly,
+        # check whether it actually looks numeric -- if not, and some other
+        # column does, prefer that one instead of a text column (e.g. a
+        # 'Canal'/channel column repeated on every row).
+        fallback = df.columns[1] if len(df.columns) > 1 else df.columns[0]
+        numeric_cols = _numeric_looking_columns(df, exclude_hints=COLUMN_NAME_HINTS["date"])
+        if numeric_cols and fallback not in numeric_cols:
+            return numeric_cols[0]
+        return fallback
     except Exception:
         return user_kpi
 
@@ -578,7 +634,19 @@ def load_and_prepare_data(config):
             "coluna de KPI do arquivo de performance",
         )
         kpi_df.rename(columns={kpi_date_col: "Date", kpi_value_col: "kpi"}, inplace=True)
+        kpi_raw_values = kpi_df["kpi"]
         kpi_df["kpi"] = robust_numeric_parsing(kpi_df["kpi"], column_name="kpi")
+        kpi_nan_ratio = kpi_df["kpi"].isna().mean() if len(kpi_df) else 0
+        if kpi_nan_ratio > 0.5:
+            bad_examples = kpi_raw_values[kpi_df["kpi"].isna()].unique()[:3].tolist()
+            raise ValueError(
+                f"Coluna de KPI ('{kpi_value_col}') no arquivo de performance "
+                f"('{config['performance_file_path']}') não pôde ser convertida para número em "
+                f"mais de 50% das linhas ({kpi_nan_ratio:.0%} inválido). Isso geralmente indica "
+                f"que a coluna de KPI errada foi identificada. Exemplos de valores encontrados: "
+                f"{bad_examples}. Verifique 'performance_kpi_column' / "
+                f"'column_mapping.performance_file.kpi_col' no config."
+            )
 
         inv_date_col = resolve_column(
             daily_investment_df,
@@ -613,9 +681,27 @@ def load_and_prepare_data(config):
         daily_investment_df["Product Group"] = (
             daily_investment_df["Product Group"].str.strip().str.upper()
         )
+        investment_raw_values = daily_investment_df["investment"]
         daily_investment_df["investment"] = robust_numeric_parsing(
             daily_investment_df["investment"], column_name="investment"
         )
+        investment_nan_ratio = (
+            daily_investment_df["investment"].isna().mean() if len(daily_investment_df) else 0
+        )
+        if investment_nan_ratio > 0.5:
+            bad_examples = (
+                investment_raw_values[daily_investment_df["investment"].isna()]
+                .unique()[:3]
+                .tolist()
+            )
+            raise ValueError(
+                f"Coluna de investimento ('{inv_value_col}') no arquivo de investimento "
+                f"('{config['investment_file_path']}') não pôde ser convertida para número em "
+                f"mais de 50% das linhas ({investment_nan_ratio:.0%} inválido). Isso geralmente "
+                f"indica que a coluna de investimento errada foi identificada. Exemplos de "
+                f"valores encontrados: {bad_examples}. Verifique "
+                f"'column_mapping.investment_file.investment_col' no config."
+            )
 
         # --- Date Formatting ---
         kpi_df["Date"] = robust_date_parsing(
@@ -643,6 +729,22 @@ def load_and_prepare_data(config):
                 f"('{config['investment_file_path']}') após a limpeza. Verifique o formato de "
                 f"data, canal e investimento no arquivo."
             )
+
+        # --- Aggregate Performance File Rows With Duplicate Dates ---
+        # If the performance file has more than one row per date (most likely
+        # a per-channel breakdown -- the file has no dedicated channel_col
+        # mapping the way the investment file does, so we can't isolate the
+        # exact column, but we can still detect the duplication and act on
+        # it), summing explicitly here avoids the later merge(s) with
+        # investment_pivot/trends_df on "Date" silently fanning out rows.
+        if kpi_df["Date"].duplicated().any():
+            n_dupe_rows = int(kpi_df["Date"].duplicated().sum())
+            print(
+                f"   - AVISO: {n_dupe_rows} linha(s) com data duplicada encontrada(s) no arquivo "
+                f"de performance (provável detalhamento por canal). Somando os valores de KPI "
+                f"por data antes de prosseguir."
+            )
+            kpi_df = kpi_df.groupby("Date", as_index=False)["kpi"].sum()
 
         # --- Cadence Detection & Partial-Period Pruning ---
         inv_cadence = detect_cadence(daily_investment_df["Date"])
@@ -772,6 +874,6 @@ def load_and_prepare_data(config):
     except FileNotFoundError as e:
         raise FileNotFoundError(
             f"An input file was not found. Please check your config file paths. Details: {e}"
-        )
+        ) from e
     except Exception as e:
-        raise Exception(f"An unexpected error occurred during data preparation: {e}")
+        raise Exception(f"An unexpected error occurred during data preparation: {e}") from e
