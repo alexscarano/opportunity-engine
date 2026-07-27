@@ -547,6 +547,18 @@ def test_detect_cadence_non_canonical_returns_raw_median():
     assert detect_cadence(dates) == 14
 
 
+def test_detect_cadence_5_day_median_stays_raw_not_snapped_to_7():
+    # Just below the 6-8 weekly snapping window -- must NOT snap to 7.
+    dates = pd.Series(pd.date_range("2025-01-01", periods=2, freq="5D"))
+    assert detect_cadence(dates) == 5
+
+
+def test_detect_cadence_9_day_median_stays_raw_not_snapped_to_7():
+    # Just above the 6-8 weekly snapping window -- must NOT snap to 7.
+    dates = pd.Series(pd.date_range("2025-01-01", periods=2, freq="9D"))
+    assert detect_cadence(dates) == 9
+
+
 def test_detect_cadence_fewer_than_2_unique_dates_returns_1():
     """Documented default: with 0 or 1 unique dates there's no diff() to
     compute a cadence from, so we assume daily (1) as a safe default -- this

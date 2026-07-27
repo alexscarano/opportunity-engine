@@ -175,6 +175,14 @@ def drop_partial_periods(df, date_col, cadence):
 
     Loga quantas e quais datas foram descartadas e retorna o dataframe
     filtrado.
+
+    Cuidado ao reusar com uma `cadence` vinda de fora (não derivada via
+    `detect_cadence` da própria série): com exatamente 2 datas únicas, ambas
+    viram "borda" e comparam a mesma distância simétrica contra o limiar --
+    se essa distância cair abaixo de 0.6*cadence, as DUAS datas são
+    descartadas e o resultado fica vazio. Isso não acontece no fluxo atual
+    (load_and_prepare_data sempre deriva a cadência da própria série), mas é
+    uma armadilha real para quem chamar esta função com cadência externa.
     """
     dates = pd.to_datetime(df[date_col])
     unique_dates = pd.Series(dates.unique()).sort_values().reset_index(drop=True)
