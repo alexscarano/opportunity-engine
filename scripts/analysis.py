@@ -4,6 +4,7 @@ This module contains all the core data processing and analysis functions,
 including event detection, causal impact modeling, and opportunity forecasting.
 """
 
+import math
 import pandas as pd
 import numpy as np
 import statsmodels.api as sm
@@ -33,28 +34,68 @@ def geometric_decay(series, alpha):
     return lfilter([1], [1, -alpha], series)
 
 
-def create_calendar_features(df, country_code="BR"):
-    """Creates time-series features from a datetime index."""
+def create_calendar_features(df, country_code="BR", period_days=1):
+    """Creates time-series features from a datetime index.
+
+    Day-of-week/weekend/payday/holiday features only make sense on genuinely
+    daily data. On weekly-or-coarser data every row falls on the same day of
+    week (e.g. always Sunday), so these would be constant/degenerate columns
+    that waste model capacity and could get picked up as spurious
+    "predictors" by LassoCV purely by chance. `month` stays useful at any
+    granularity coarser than daily, so it's always generated.
+    """
     df_featured = df.copy()
-    df_featured["dayofweek"] = df_featured.index.dayofweek
     df_featured["month"] = df_featured.index.month
-    df_featured["is_weekend"] = (df_featured.index.dayofweek >= 5).astype(int)
-    df_featured["is_payday_period"] = (
-        (df_featured.index.day >= 1) & (df_featured.index.day <= 5)
-        | (df_featured.index.day >= 15) & (df_featured.index.day <= 20)
-    ).astype(int)
 
-    try:
-        country_holidays = holidays.CountryHoliday(country_code)
-        df_featured["is_holiday"] = df_featured.index.map(
-            lambda date: date in country_holidays
+    if period_days == 1:
+        df_featured["dayofweek"] = df_featured.index.dayofweek
+        df_featured["is_weekend"] = (df_featured.index.dayofweek >= 5).astype(int)
+        df_featured["is_payday_period"] = (
+            (df_featured.index.day >= 1) & (df_featured.index.day <= 5)
+            | (df_featured.index.day >= 15) & (df_featured.index.day <= 20)
         ).astype(int)
-    except Exception:
-        df_featured["is_holiday"] = 0
 
-    for i in range(7):
-        df_featured[f"day_{i}"] = (df_featured["dayofweek"] == i).astype(int)
+        try:
+            country_holidays = holidays.CountryHoliday(country_code)
+            df_featured["is_holiday"] = df_featured.index.map(
+                lambda date: date in country_holidays
+            ).astype(int)
+        except Exception:
+            df_featured["is_holiday"] = 0
+
+        for i in range(7):
+            df_featured[f"day_{i}"] = (df_featured["dayofweek"] == i).astype(int)
+
     return df_featured
+
+
+def periods_to_days(days_config, period_days, min_periods, label=""):
+    """
+    Converts a day-based window config (e.g. post_event_days=14) into a
+    period-aware day-span and period count, given the detected reporting
+    cadence `period_days` (days per period, from Fase 2's cadence detection).
+
+    A day-count window is only meaningful in "rows of data" terms once
+    divided by the cadence -- 14 days is 14 rows of daily data but only 2
+    rows of weekly data, which is too little for the causal-impact modeling
+    downstream. This enforces a floor of `min_periods` reporting periods,
+    only overriding the user's configured days when they'd otherwise yield
+    FEWER periods than that floor (and logs when the floor kicks in).
+
+    Returns (day_span, periods): `day_span` is the number of days to use in
+    date-range arithmetic; `periods` is the resulting period count.
+    """
+    period_days = period_days if period_days else 1
+    raw_periods = days_config / period_days
+    periods = max(min_periods, math.ceil(raw_periods))
+    if periods > raw_periods:
+        print(
+            f"   - AVISO: janela '{label}' configurada em {days_config} dia(s) "
+            f"renderia menos que o mínimo de {min_periods} período(s) de dados "
+            f"(cadência detectada: {period_days} dia(s)/período). Mínimo de "
+            f"{periods} período(s) ({periods * period_days} dias) aplicado."
+        )
+    return periods * period_days, periods
 
 
 def find_events(
@@ -65,6 +106,7 @@ def find_events(
     post_event_days,
     pre_selection_pool_size=30,
     output_dir=None,
+    period_days=1,
 ):
     """
     Finds all significant investment changes, groups overlapping events into a single
@@ -90,9 +132,18 @@ def find_events(
             if len(product_df) < 14:
                 continue
 
-            product_df["weeks"] = (
-                pd.to_datetime(product_df["dates"]).dt.to_period("W-MON").dt.start_time
-            )
+            product_df["dates"] = pd.to_datetime(product_df["dates"])
+            if period_days >= 7:
+                # Data already reports at weekly-or-coarser cadence -- re-bucketing
+                # into ISO "W-MON" weeks can shift native periods across the wrong
+                # boundary (e.g. Sunday-reported weekly rows landing in a different
+                # Monday-start week than the one they actually belong to). Use the
+                # native per-row dates directly as the per-period series instead.
+                product_df["weeks"] = product_df["dates"]
+            else:
+                product_df["weeks"] = product_df["dates"].dt.to_period(
+                    "W-MON"
+                ).dt.start_time
             weekly_investment_df = (
                 product_df.groupby("weeks")["investment"].sum().reset_index()
             )
@@ -266,7 +317,10 @@ def run_causal_impact_analysis(
         model_data.fillna(0, inplace=True)
 
         country_code = config.get("country_code", "BR")
-        model_data = create_calendar_features(model_data, country_code=country_code)
+        period_days = config.get("period_days", 1)
+        model_data = create_calendar_features(
+            model_data, country_code=country_code, period_days=period_days
+        )
 
         event_channels = [ch.strip() for ch in product_group.split(",")]
         event_investment_series = model_data[event_channels].sum(axis=1)
@@ -307,13 +361,20 @@ def run_causal_impact_analysis(
         post_data = model_data.loc[post_period[0] : post_period[1]].copy()
 
         min_pre_period_days = config.get("min_pre_period_days", 14)  # Require at least configurable days of pre-period data (default 14)
+        # Convert the day-based config into a period-aware row-count floor: with
+        # weekly/monthly data, 14 "days" is only 2/0.5 rows -- min_pre_period_days
+        # compared directly against a row count conflates "days" with "rows",
+        # which is only correct for daily data.
+        _, min_pre_periods = periods_to_days(
+            min_pre_period_days, period_days, 8, label="min_pre_period_days"
+        )
         if (
             pre_data_for_model.empty
             or post_data.empty
-            or len(pre_data_for_model) < min_pre_period_days
+            or len(pre_data_for_model) < min_pre_periods
         ):
             print(
-                f"   - SKIPPED: Insufficient data for causal impact analysis. Pre-period data points: {len(pre_data_for_model)} (min required: {min_pre_period_days})."
+                f"   - SKIPPED: Insufficient data for causal impact analysis. Pre-period data points: {len(pre_data_for_model)} (min required: {min_pre_periods} período(s), cadência={period_days} dia(s)/período)."
             )
             return None, None, None, None, None
 
@@ -432,10 +493,17 @@ def run_causal_impact_analysis(
             event_investment_agg["Date"] <= pre_period_end_date
         ].copy()
 
-        # Weekly aggregation for historical average calculation
-        historical_investment["weeks"] = (
-            historical_investment["Date"].dt.to_period("W").dt.start_time
-        )
+        # Weekly aggregation for historical average calculation -- but only when
+        # the data is genuinely daily. When it's already weekly-or-coarser
+        # (period_days >= 7), re-bucketing via to_period("W") has the same
+        # boundary-misalignment risk as in find_events: use the native per-row
+        # dates directly so "historical_avg" is a per-native-period average.
+        if period_days >= 7:
+            historical_investment["weeks"] = historical_investment["Date"]
+        else:
+            historical_investment["weeks"] = (
+                historical_investment["Date"].dt.to_period("W").dt.start_time
+            )
         weekly_investment_df = (
             historical_investment.groupby("weeks")["investment"].sum().reset_index()
         )
@@ -451,9 +519,17 @@ def run_causal_impact_analysis(
         if not weekly_investment_df.empty and pd.notna(
             weekly_investment_df["historical_avg"].iloc[-1]
         ):
-            total_investment_pre_period = weekly_investment_df["historical_avg"].iloc[
-                -1
-            ] * (len(post_data) / 7)
+            # post_data rows are native periods. When historical_avg is a
+            # per-week average (period_days=1, re-bucketed above), the post
+            # period spans len(post_data)/7 weeks. When historical_avg is
+            # already per-native-period (period_days>=7, no re-bucketing),
+            # post_data's rows ARE the periods, so no /7 conversion applies.
+            periods_in_post = (
+                len(post_data) if period_days >= 7 else len(post_data) / 7
+            )
+            total_investment_pre_period = (
+                weekly_investment_df["historical_avg"].iloc[-1] * periods_in_post
+            )
         else:
             # Fallback to like-for-like if historical average is not available
             like_for_like_pre_period_end = pd.to_datetime(post_period[0]) - timedelta(
@@ -581,8 +657,9 @@ def _train_response_model(model_data, product_group, config):
     # --- 1. Model and Subtract Baseline KPI ---
     print("   - Modeling baseline KPI using non-investment features...")
     country_code = config.get("country_code", "BR")
+    period_days = config.get("period_days", 1)
     model_data_featured = create_calendar_features(
-        model_data.copy(), country_code=country_code
+        model_data.copy(), country_code=country_code, period_days=period_days
     )
 
     # day_0 is the reference category and is_weekend is a linear combination of

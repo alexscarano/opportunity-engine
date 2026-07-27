@@ -24,13 +24,19 @@ import holidays
 import data_preprocessor
 
 
-def create_calendar_features(df, country_code="BR"):
+def create_calendar_features(df, country_code="BR", period_days=1):
     """
     Creates various time-series features based on the 'Date' column.
 
     Args:
         df (pd.DataFrame): The input DataFrame containing a 'Date' column.
         country_code (str): The ISO country code for holiday detection.
+        period_days (int): Days per reporting period (from cadence detection).
+            Weekend/payday/holiday features only make sense on genuinely daily
+            data -- on weekly-or-coarser data every row lands on the same day
+            of week, so they'd be constant/degenerate columns. `month_*` stays
+            useful at any granularity coarser than daily, so it's always
+            generated.
 
     Returns:
         pd.DataFrame: The DataFrame with added calendar features.
@@ -47,23 +53,24 @@ def create_calendar_features(df, country_code="BR"):
     for month in range(1, 13):
         df_featured[f"month_{month}"] = (df_featured.index.month == month).astype(int)
 
-    # Weekend feature
-    df_featured["is_weekend"] = (df_featured.index.dayofweek >= 5).astype(int)
+    if period_days == 1:
+        # Weekend feature
+        df_featured["is_weekend"] = (df_featured.index.dayofweek >= 5).astype(int)
 
-    # Payday period (typically 1st-5th and 15th-20th of the month)
-    df_featured["is_payday_period"] = (
-        ((df_featured.index.day >= 1) & (df_featured.index.day <= 5))
-        | ((df_featured.index.day >= 15) & (df_featured.index.day <= 20))
-    ).astype(int)
-
-    # Holiday feature
-    try:
-        country_holidays = holidays.CountryHoliday(country_code)
-        df_featured["is_holiday"] = df_featured.index.map(
-            lambda date: date in country_holidays
+        # Payday period (typically 1st-5th and 15th-20th of the month)
+        df_featured["is_payday_period"] = (
+            ((df_featured.index.day >= 1) & (df_featured.index.day <= 5))
+            | ((df_featured.index.day >= 15) & (df_featured.index.day <= 20))
         ).astype(int)
-    except Exception:
-        df_featured["is_holiday"] = 0
+
+        # Holiday feature
+        try:
+            country_holidays = holidays.CountryHoliday(country_code)
+            df_featured["is_holiday"] = df_featured.index.map(
+                lambda date: date in country_holidays
+            ).astype(int)
+        except Exception:
+            df_featured["is_holiday"] = 0
 
     df_featured.reset_index(inplace=True)
     return df_featured
@@ -303,7 +310,10 @@ def run_mmm_engine(config):
 
         # Create calendar features
         country_code = config.get("country_code", "BR")
-        df = create_calendar_features(df, country_code=country_code)
+        period_days = config.get("period_days", 1)
+        df = create_calendar_features(
+            df, country_code=country_code, period_days=period_days
+        )
 
         # Fill any remaining NaNs
         df = df.fillna(0)

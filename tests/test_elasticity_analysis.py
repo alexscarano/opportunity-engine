@@ -20,6 +20,7 @@ from elasticity_analysis import (
     predict_clipped_kpi,
     bootstrap_average_coefficients,
     walk_forward_cv_score,
+    create_calendar_features,
 )
 
 
@@ -298,6 +299,55 @@ class TestWalkForwardCvScore(unittest.TestCase):
         transformed = pd.DataFrame({"CH": x})
         _, r2 = walk_forward_cv_score(transformed, lift)
         self.assertLessEqual(r2, 0.1)
+
+
+class TestCreateCalendarFeaturesCadenceGate(unittest.TestCase):
+    """Fase 3: calendar features must only include day-of-week/payday/holiday
+    dummies for genuinely daily data (period_days=1) -- on weekly-or-coarser
+    data every row lands on the same day of week, so those columns would be
+    constant/degenerate. month_* is kept regardless of cadence."""
+
+    def test_daily_generates_month_and_weekday_features(self):
+        dates = pd.date_range("2024-01-01", periods=30, freq="D")
+        df = pd.DataFrame({"Date": dates, "x": range(30)})
+
+        out = create_calendar_features(df, period_days=1)
+
+        for col in ["is_weekend", "is_payday_period", "is_holiday", "month_1"]:
+            self.assertIn(col, out.columns)
+
+    def test_weekly_generates_only_month_features(self):
+        dates = pd.date_range("2024-01-01", periods=30, freq="7D")
+        df = pd.DataFrame({"Date": dates, "x": range(30)})
+
+        out = create_calendar_features(df, period_days=7)
+
+        self.assertIn("month_1", out.columns)
+        for col in ["is_weekend", "is_payday_period", "is_holiday"]:
+            self.assertNotIn(col, out.columns)
+
+    def test_base_features_selection_does_not_crash_without_calendar_dummies(self):
+        """Mirrors the `base_features` list comprehension in run_mmm_engine
+        (col.startswith('month_') or col in [...] + context_cols) -- a
+        membership check over df.columns, so it must degrade gracefully
+        (fewer selected features) rather than KeyError when is_weekend/
+        is_payday_period/is_holiday are absent."""
+        dates = pd.date_range("2024-01-01", periods=30, freq="7D")
+        df = pd.DataFrame({"Date": dates, "x": range(30)})
+        df = create_calendar_features(df, period_days=7)
+
+        context_cols = []
+        base_features = [
+            col
+            for col in df.columns
+            if col.startswith("month_")
+            or col in ["is_weekend", "is_payday_period", "is_holiday"] + context_cols
+        ]
+
+        # Should not raise, and should still pick up the always-present
+        # month_* one-hot columns.
+        self.assertTrue(any(c.startswith("month_") for c in base_features))
+        self.assertNotIn("is_weekend", base_features)
 
 
 if __name__ == "__main__":
