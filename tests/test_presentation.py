@@ -19,6 +19,7 @@ from presentation import (
     save_investment_bar_plot,
     save_sessions_bar_plot,
     save_causal_chart_data,
+    create_comparative_saturation_md,
 )
 
 
@@ -224,6 +225,49 @@ class TestSaveCausalChartData(unittest.TestCase):
             accuracy_out = pd.read_csv(os.path.join(tmp_dir, "accuracy_data.csv"))
             self.assertEqual(list(accuracy_out["Predicted"]), [12, 18, 14])
             self.assertEqual(list(accuracy_out["mae"]), [12.34, 12.34, 12.34])
+
+
+class TestComparativeSaturationMdMonthlyFactor(unittest.TestCase):
+    """Fase 3: the summary table's kpi_projections extrapolation must scale
+    by 30/period_days, not a flat 30, so weekly/monthly cadence data isn't
+    overstated by ~30/period_days x."""
+
+    def _run(self, period_days, tmp_path):
+        kpi_projections = {
+            "current": {"Daily_Investment": 1000.0, "Projected_Total_KPIs": 500.0, "Incremental_KPI": 0},
+            "optimized": {"Daily_Investment": 1200.0, "Projected_Total_KPIs": 550.0, "Incremental_KPI": 50.0},
+            "strategic": {"Daily_Investment": 1500.0, "Projected_Total_KPIs": 600.0, "Incremental_KPI": 100.0},
+            "reallocation": {"Daily_Investment": 1000.0, "Projected_Total_KPIs": 520.0, "Incremental_KPI": 20.0},
+        }
+        kwargs = {}
+        if period_days is not None:
+            kwargs["period_days"] = period_days
+        create_comparative_saturation_md(
+            scenarios=[], output_filename=tmp_path, kpi_projections=kpi_projections,
+            kpi_name="Leads", **kwargs,
+        )
+        with open(tmp_path, "r", encoding="utf-8") as f:
+            return f.read()
+
+    def test_weekly_cadence_scales_by_30_over_7(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_path = os.path.join(tmp_dir, "out.md")
+            content = self._run(7, out_path)
+        # Daily_Investment=1000 * (30/7) ~= 4285.71 -> "R$ 4.3k", not "R$ 30.0k"
+        self.assertIn("R$ 4.3k", content)
+        self.assertNotIn("R$ 30.0k", content)
+
+    def test_daily_cadence_matches_old_flat_30_behavior(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_path = os.path.join(tmp_dir, "out.md")
+            content = self._run(1, out_path)
+        self.assertIn("R$ 30.0k", content)
+
+    def test_default_period_days_preserves_flat_30_for_backward_compat(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_path = os.path.join(tmp_dir, "out.md")
+            content = self._run(None, out_path)
+        self.assertIn("R$ 30.0k", content)
 
 
 if __name__ == "__main__":

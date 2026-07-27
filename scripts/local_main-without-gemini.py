@@ -82,6 +82,14 @@ def main(config, args):
         advertiser_name = config.get("advertiser_name", "default_advertiser")
         brand_output_dir = os.path.join(base_output_dir, advertiser_name)
 
+        period_days = config.get("period_days", 1)
+        # post_event_days is configured in DAYS but really means "how many
+        # reporting periods after the event" -- with weekly/monthly data a
+        # day-based value can imply too few rows for the causal model below.
+        post_event_day_span, post_event_periods = analysis.periods_to_days(
+            config["post_event_days"], period_days, 4, label="post_event_days"
+        )
+
         event_map_df, _, _ = analysis.find_events(
             daily_investment_df,
             config["advertiser_name"],
@@ -89,6 +97,7 @@ def main(config, args):
             decrease_ratio,
             config["post_event_days"],
             output_dir=brand_output_dir,
+            period_days=period_days,
         )
 
         if event_map_df is None or event_map_df.empty:
@@ -120,7 +129,7 @@ def main(config, args):
                             ),
                             "end_date": (
                                 pd.to_datetime(row["date"])
-                                + timedelta(days=config["post_event_days"])
+                                + timedelta(days=post_event_day_span)
                             ).strftime("%Y-%m-%d"),
                             "product_group": row["ad_product"],
                         }
@@ -463,10 +472,18 @@ def main(config, args):
                 strategic_limit_point=strategic_limit_point,
             )
 
+            # Monthly extrapolation factor: 30/period_days periods per month.
+            # Reduces to the historical "* 30" for daily data (period_days=1);
+            # scales correctly for weekly/monthly cadences instead of
+            # overstating monthly projections by ~30/period_days x.
+            monthly_factor = 30 / period_days
+
             # --- DYNAMICALLY SET TOTAL INVESTMENT FROM MODEL BASELINE ---
             total_monthly_investment = 0
             if baseline_point and "Daily_Investment" in baseline_point:
-                total_monthly_investment = baseline_point["Daily_Investment"] * 30
+                total_monthly_investment = (
+                    baseline_point["Daily_Investment"] * monthly_factor
+                )
             # ---------------------------------------------------------
 
             plot_filename = os.path.join(
@@ -511,30 +528,31 @@ def main(config, args):
                         },
                     },
                     "projected_kpis": {
-                        mix: kpi * 30
+                        mix: kpi * monthly_factor
                         for mix, kpi in baseline_point.get("projected_kpis", {}).items()
                     },
                 },
                 {
                     "title": "Cenário de Investimento Otimizado",
                     "description": "Escala o investimento total para o nível onde foi observado o maior pico de eficiência teórica antes da saturação acelerada.",
-                    "total_investment": max_efficiency_point["Daily_Investment"] * 30,
+                    "total_investment": max_efficiency_point["Daily_Investment"]
+                    * monthly_factor,
                     "splits": {
                         "Média Histórica": {
-                            k: v * max_efficiency_point["Daily_Investment"] * 30
+                            k: v * max_efficiency_point["Daily_Investment"] * monthly_factor
                             for k, v in current_budget_split.items()
                         },
                         "Pico de Eficiência": {
-                            k: v * max_efficiency_point["Daily_Investment"] * 30
+                            k: v * max_efficiency_point["Daily_Investment"] * monthly_factor
                             for k, v in optimized_budget_split.items()
                         },
                         "Modelo de Elasticidade": {
-                            k: v * max_efficiency_point["Daily_Investment"] * 30
+                            k: v * max_efficiency_point["Daily_Investment"] * monthly_factor
                             for k, v in strategic_budget_split_ratio.items()
                         },
                     },
                     "projected_kpis": {
-                        mix: kpi * 30
+                        mix: kpi * monthly_factor
                         for mix, kpi in max_efficiency_point.get(
                             "projected_kpis", {}
                         ).items()
@@ -543,23 +561,24 @@ def main(config, args):
                 {
                     "title": "Cenário de Investimento Estratégico",
                     "description": "Expande o orçamento até o limite estratégico calculado pelo modelo de elasticidade, focado em maximizar o volume de resultados.",
-                    "total_investment": strategic_limit_point["Daily_Investment"] * 30,
+                    "total_investment": strategic_limit_point["Daily_Investment"]
+                    * monthly_factor,
                     "splits": {
                         "Média Histórica": {
-                            k: v * strategic_limit_point["Daily_Investment"] * 30
+                            k: v * strategic_limit_point["Daily_Investment"] * monthly_factor
                             for k, v in current_budget_split.items()
                         },
                         "Pico de Eficiência": {
-                            k: v * strategic_limit_point["Daily_Investment"] * 30
+                            k: v * strategic_limit_point["Daily_Investment"] * monthly_factor
                             for k, v in optimized_budget_split.items()
                         },
                         "Modelo de Elasticidade": {
-                            k: v * strategic_limit_point["Daily_Investment"] * 30
+                            k: v * strategic_limit_point["Daily_Investment"] * monthly_factor
                             for k, v in strategic_budget_split_ratio.items()
                         },
                     },
                     "projected_kpis": {
-                        mix: kpi * 30
+                        mix: kpi * monthly_factor
                         for mix, kpi in strategic_limit_point.get(
                             "projected_kpis", {}
                         ).items()
@@ -584,6 +603,7 @@ def main(config, args):
                 saturation_md_output_path,
                 kpi_projections=kpi_projections,
                 kpi_name=kpi_name,
+                period_days=period_days,
             )
 
         else:

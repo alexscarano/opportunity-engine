@@ -1169,12 +1169,12 @@ with tab1:
             inv_file = st.file_uploader(
                 "Investimento (obrigatório)",
                 type=["csv"],
-                help="Investimento diário por canal de mídia.",
+                help="Investimento por canal de mídia (diário, semanal ou mensal).",
             )
             perf_file = st.file_uploader(
                 "Performance (obrigatório)",
                 type=["csv"],
-                help="Histórico diário de resultados/KPIs.",
+                help="Histórico de resultados/KPIs (diário, semanal ou mensal).",
             )
             trends_file = st.file_uploader(
                 "Tendências (opcional)",
@@ -1732,7 +1732,12 @@ with tab3:
                     total_avg_daily_spend = sum(
                         investment_pivot_df[col].mean() for col in active_spend_cols
                     )
-                    true_baseline_monthly_inv = total_avg_daily_spend * 30
+                    # Monthly extrapolation factor: 30/period_days periods per
+                    # month. Reduces to the old "* 30" for daily data
+                    # (period_days=1); scales correctly for weekly/monthly
+                    # cadences instead of overstating projections.
+                    monthly_factor = 30 / (config.get("period_days", 1) or 1)
+                    true_baseline_monthly_inv = total_avg_daily_spend * monthly_factor
 
                     if not df.empty:
                         closest_idx = (
@@ -1741,10 +1746,13 @@ with tab3:
                             .idxmin()
                         )
                         true_baseline_monthly_kpi = (
-                            df.loc[closest_idx, "Projected_Total_KPIs_Historical"] * 30
+                            df.loc[closest_idx, "Projected_Total_KPIs_Historical"]
+                            * monthly_factor
                         )
                     else:
-                        true_baseline_monthly_kpi = kpi_df["kpi"].mean() * 30
+                        true_baseline_monthly_kpi = (
+                            kpi_df["kpi"].mean() * monthly_factor
+                        )
                 except Exception as e:
                     import traceback
 
@@ -1782,7 +1790,10 @@ with tab3:
         if df is not None:
             kpi_name = config.get("primary_business_metric_name", "Transactions")
             kpi_is_monetary = config.get("kpi_is_monetary", False)
-            DAYS_IN_MONTH = 30
+            # Kept the DAYS_IN_MONTH name (used in many places below) but the
+            # value now reflects the detected reporting cadence: 30/period_days
+            # periods per month, reducing to 30 for daily data (period_days=1).
+            DAYS_IN_MONTH = 30 / (config.get("period_days", 1) or 1)
             df["Monthly_Investment"] = df["Daily_Investment"] * DAYS_IN_MONTH
             df["Monthly_KPI"] = df["Projected_Total_KPIs"] * DAYS_IN_MONTH
             baseline_monthly_inv = true_baseline_monthly_inv
@@ -2473,7 +2484,9 @@ with tab3:
                         "está gerando."
                     )
                     st.plotly_chart(
-                        build_revenue_roi_curve(df_plot, kpi_name=kpi_name),
+                        build_revenue_roi_curve(
+                            df_plot, kpi_name=kpi_name, monthly_factor=DAYS_IN_MONTH
+                        ),
                         use_container_width=True,
                     )
 

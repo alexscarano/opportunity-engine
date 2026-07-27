@@ -799,20 +799,30 @@ def generate_global_gemini_report(
             ("Realocação Estratégica (Mesmo Orçamento)", "reallocation"),
         ]
 
+        # Monthly extrapolation factor: assumes 30/period_days periods per
+        # month. period_days=1 (daily) reduces to the historical "* 30"
+        # behavior; weekly/monthly cadences scale correctly instead of
+        # overstating projections by ~30/period_days x.
+        monthly_factor = 30 / (config.get("period_days", 1) or 1)
+
         current_point = kpi_projections.get("current")
         current_inv = (
-            current_point.get("Daily_Investment", 0) * 30 if current_point else 0
+            current_point.get("Daily_Investment", 0) * monthly_factor
+            if current_point
+            else 0
         )
 
         for title, key in scenario_map:
             point = kpi_projections.get(key)
             if point:
-                inv = point.get("Daily_Investment", 0) * 30
+                inv = point.get("Daily_Investment", 0) * monthly_factor
                 inc_inv = inv - current_inv if key != "current" else 0
 
-                kpi = point.get("Projected_Total_KPIs", 0) * 30
+                kpi = point.get("Projected_Total_KPIs", 0) * monthly_factor
                 inc_kpi = (
-                    point.get("Incremental_KPI", 0) * 30 if key != "current" else 0
+                    point.get("Incremental_KPI", 0) * monthly_factor
+                    if key != "current"
+                    else 0
                 )
 
                 orders = kpi * conv_rate if conv_rate > 0 else kpi

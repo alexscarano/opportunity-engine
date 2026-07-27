@@ -261,10 +261,16 @@ def save_opportunity_curve_plot(
     # 2. Data Preparation
     plot_df = response_curve_df.copy()
 
+    # Monthly extrapolation factor: 30/period_days periods per month.
+    # Reduces to the historical flat 30 for daily data (period_days=1);
+    # scales correctly for weekly/monthly cadences.
+    period_days = (config or {}).get("period_days", 1)
+    monthly_factor = 30 / (period_days or 1)
+
     # Standardize to monthly for plotting
     if "Daily_Investment" in plot_df.columns:
-        plot_df["Monthly_Investment"] = plot_df["Daily_Investment"] * 30
-        plot_df["Monthly_KPIs"] = plot_df["Projected_Total_KPIs"] * 30
+        plot_df["Monthly_Investment"] = plot_df["Daily_Investment"] * monthly_factor
+        plot_df["Monthly_KPIs"] = plot_df["Projected_Total_KPIs"] * monthly_factor
     else:
         plot_df.rename(
             columns={
@@ -292,7 +298,7 @@ def save_opportunity_curve_plot(
     if "Projected_Total_KPIs_Historical" in plot_df.columns:
         ax.plot(
             plot_df["Monthly_Investment"],
-            plot_df["Projected_Total_KPIs_Historical"] * 30,
+            plot_df["Projected_Total_KPIs_Historical"] * monthly_factor,
             label="Curva - Mix Histórico",
             color="gray",
             linewidth=2,
@@ -301,7 +307,7 @@ def save_opportunity_curve_plot(
     if "Projected_Total_KPIs_Optimized" in plot_df.columns:
         ax.plot(
             plot_df["Monthly_Investment"],
-            plot_df["Projected_Total_KPIs_Optimized"] * 30,
+            plot_df["Projected_Total_KPIs_Optimized"] * monthly_factor,
             label="Curva - Mix Otimizado",
             color="salmon",
             linewidth=2,
@@ -322,8 +328,8 @@ def save_opportunity_curve_plot(
 
         d_inv = point.get("Daily_Investment", 0)
         d_kpi = point.get("Projected_Total_KPIs", 0)
-        monthly_inv = d_inv * 30
-        monthly_kpi = d_kpi * 30
+        monthly_inv = d_inv * monthly_factor
+        monthly_kpi = d_kpi * monthly_factor
 
         if monthly_inv == 0 and monthly_kpi == 0 and label != "Cenário Atual":
             return
@@ -417,7 +423,9 @@ def save_opportunity_curve_plot(
 
     # --- Extend the x-axis ---
     if strategic_limit_point and "Daily_Investment" in strategic_limit_point:
-        max_investment_on_plot = strategic_limit_point["Daily_Investment"] * 30
+        max_investment_on_plot = (
+            strategic_limit_point["Daily_Investment"] * monthly_factor
+        )
         ax.set_xlim(right=max_investment_on_plot * 1.5)
     # --- End New ---
 
@@ -431,12 +439,20 @@ def save_opportunity_curve_plot(
 
 
 def create_comparative_saturation_md(
-    scenarios, output_filename, kpi_projections=None, kpi_name="KPIs"
+    scenarios, output_filename, kpi_projections=None, kpi_name="KPIs", period_days=1
 ):
     """
     Generates a markdown file with a separate table for each budget scenario,
     each with the three splits.
+
+    `period_days` is the detected reporting cadence (1=daily, 7=weekly,
+    30=monthly, from Fase 2's cadence detection): the summary table below
+    extrapolates kpi_projections' raw per-period values to a monthly figure
+    using 30/period_days, not a flat 30 (which would overstate monthly
+    numbers for non-daily data). `scenarios`' own splits/projected_kpis are
+    pre-scaled by the caller and don't need this factor again.
     """
+    monthly_factor = 30 / (period_days or 1)
 
     markdown_content = "# Análise Comparativa de Alocação de Orçamento\n\n"
 
@@ -459,15 +475,15 @@ def create_comparative_saturation_md(
         ]
 
         baseline_point = kpi_projections.get("current", {})
-        baseline_inv = baseline_point.get("Daily_Investment", 0) * 30
+        baseline_inv = baseline_point.get("Daily_Investment", 0) * monthly_factor
 
         for title, key in scenario_map:
             point = kpi_projections.get(key)
             if point:
-                # Scale from daily to monthly just once here
-                inv = point.get("Daily_Investment", 0) * 30
-                kpi = point.get("Projected_Total_KPIs", 0) * 30
-                inc_kpi = point.get("Incremental_KPI", 0) * 30
+                # Scale from per-period to monthly just once here
+                inv = point.get("Daily_Investment", 0) * monthly_factor
+                kpi = point.get("Projected_Total_KPIs", 0) * monthly_factor
+                inc_kpi = point.get("Incremental_KPI", 0) * monthly_factor
 
                 # Calculate metrics
                 inc_inv = inv - baseline_inv

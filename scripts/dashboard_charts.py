@@ -152,15 +152,19 @@ def build_icpa_curve(
     return fig
 
 
-def build_revenue_roi_curve(df_plot, kpi_name="kpi"):
-    """Dual-axis chart: Projected Revenue (left) and Incremental ROI (right) vs Monthly_Investment."""
+def build_revenue_roi_curve(df_plot, kpi_name="kpi", monthly_factor=30):
+    """Dual-axis chart: Projected Revenue (left) and Incremental ROI (right) vs Monthly_Investment.
+
+    `monthly_factor` extrapolates the per-period Projected_Revenue column to a
+    monthly figure (30/period_days periods per month -- defaults to the old
+    flat 30, i.e. daily cadence, when the caller doesn't pass it)."""
     finite_roi = df_plot[np.isfinite(df_plot["Incremental_ROI"])]
 
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
             x=df_plot["Monthly_Investment"],
-            y=df_plot["Projected_Revenue"] * 30,
+            y=df_plot["Projected_Revenue"] * monthly_factor,
             mode="lines",
             name="Receita Projetada (Mensal)",
             line=dict(color="royalblue", width=3),
