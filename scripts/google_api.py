@@ -76,8 +76,11 @@ def suggest_form_fields(model, performance_df_sample):
     """Pede ao Gemini para sugerir Coluna do KPI, se é monetário, e o
     Objetivo da Otimização a partir de uma amostra do CSV de performance.
 
-    Levanta ValueError se a resposta vier ausente, malformada, ou falhar
-    na validação contra as colunas reais da amostra.
+    Levanta ValueError se o JSON da resposta vier malformado ou falhar na
+    validação contra as colunas reais da amostra. Erros de rede/API do
+    model.generate_content() propagam como a exceção original (não
+    convertidos para ValueError) -- quem chama deve tratar Exception
+    genericamente se quiser cobrir também esses casos.
     """
     columns = performance_df_sample.columns.tolist()
     sample_csv = performance_df_sample.head(5).to_csv(index=False)
