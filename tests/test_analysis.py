@@ -4,11 +4,13 @@ import os
 
 import numpy as np
 import pandas as pd
+import pytest
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "scripts")))
 
 from analysis import (
     run_opportunity_projection,
+    run_causal_impact_analysis,
     create_calendar_features,
     find_events,
     periods_to_days,
@@ -234,3 +236,136 @@ def test_find_events_weekly_data_still_detects_a_real_spike():
 
     assert not event_map_df.empty
     assert event_map_df["percentage_change"].abs().max() > 100
+
+
+# --- periods_in_post scaling for non-canonical cadence (period_days 2-6) ---
+
+
+def test_run_causal_impact_analysis_scales_pre_period_baseline_for_non_canonical_cadence():
+    """
+    Regression for periods_in_post under-scaling in run_causal_impact_analysis
+    when period_days is a non-canonical cadence (2-6 days) -- a real,
+    reachable case since detect_cadence can genuinely return e.g. 3 for
+    irregular real-world reporting. The old code did
+    `len(post_data) / 7` whenever period_days < 7, silently assuming every
+    row is 1 day. For period_days=3 that understated periods_in_post (and
+    the downstream total_investment_pre_period baseline) by ~3x. Correct
+    formula: `len(post_data) * period_days / 7`.
+
+    Builds a daily synthetic series, then aggregates it into 3-day buckets
+    (as detect_cadence would if the source data itself reported every 3
+    days), runs the real function, and checks total_investment_pre_period
+    against an independently-computed ground truth for "historical per-week
+    average investment * weeks spanned by the post period" -- using the
+    post period's calendar-day span rather than len(post_data), as a
+    cross-check on the fix. Also asserts the result is NOT close to what
+    the old buggy formula would have produced.
+    """
+    period_days = 3
+    n_days = 210
+    rng = np.random.default_rng(1)
+    dates = pd.date_range("2024-01-01", periods=n_days, freq="D")
+    investment = np.clip(100 + rng.normal(0, 15, n_days), 10, None)
+    kpi = 50 + 0.8 * np.sqrt(investment) * 10 + rng.normal(0, 2, n_days)
+    generic_searches = 50 + rng.normal(0, 5, n_days)  # non-constant, so it can
+    # survive the pre-period VarianceThreshold feature selection below.
+
+    daily_investment_df = pd.DataFrame(
+        {"Date": dates, "Product Group": "TestChannel", "investment": investment}
+    )
+    kpi_df = pd.DataFrame({"Date": dates, "kpi": kpi})
+    market_trends_df = pd.DataFrame({"Date": dates, "Generic Searches": generic_searches})
+
+    # Aggregate the daily series into 3-day buckets, as period_days=3
+    # cadence data would arrive already pre-aggregated in real reporting.
+    merged = (
+        daily_investment_df[["Date", "investment"]]
+        .merge(kpi_df, on="Date")
+        .merge(market_trends_df, on="Date")
+        .set_index("Date")
+    )
+    agg = (
+        merged.resample("3D")
+        .agg({"investment": "sum", "kpi": "sum", "Generic Searches": "mean"})
+        .reset_index()
+    )
+
+    agg_investment_df = agg[["Date", "investment"]].assign(
+        **{"Product Group": "TestChannel"}
+    )[["Date", "Product Group", "investment"]]
+    agg_kpi_df = agg[["Date", "kpi"]]
+    agg_market_trends_df = agg[["Date", "Generic Searches"]]
+
+    config = {
+        "optimization_target": "CONVERSIONS",
+        "kpi_is_monetary": False,
+        "financial_targets": {"target_roas": 0, "target_iroas": 0},
+        "average_ticket": 0,
+        "conversion_rate_from_kpi_to_bo": 0,
+        "investment_limit_factor": 2.0,
+        "country_code": "BR",
+    }
+    # Train on the SAME aggregated (3-day) cadence used below -- in the real
+    # pipeline, projection and causal-impact analysis both operate on
+    # whatever cadence detect_cadence found, so alpha/k/s must be fit at
+    # that scale too (fitting on daily-scale investment and applying to
+    # 3-day sums would saturate the response curve into a flat, ~0-variance
+    # region and fail feature selection for unrelated reasons).
+    *_, model_params, _ = run_opportunity_projection(
+        agg_kpi_df, agg_investment_df, agg_market_trends_df, "TestChannel", config
+    )
+    assert "alpha" in model_params
+
+    pre_period = ("2024-01-01", "2024-06-28")  # 180 days -> 60 buckets of 3 days
+    post_period = ("2024-06-29", "2024-07-19")  # 21 days -> 7 buckets of 3 days
+
+    results_dict, *_ = run_causal_impact_analysis(
+        agg_kpi_df,
+        agg_investment_df,
+        agg_market_trends_df,
+        pd.DataFrame(),
+        pre_period,
+        post_period,
+        "TestEvent",
+        "TestChannel",
+        model_params,
+        {"period_days": period_days, "country_code": "BR", "min_pre_period_days": 14},
+    )
+    assert results_dict is not None, (
+        "run_causal_impact_analysis returned None -- check stdout above for "
+        "the swallowed exception"
+    )
+
+    # Ground truth for the historical weekly-average baseline: mirrors the
+    # source's own weekly re-bucketing, but derives the post-period length
+    # from calendar days instead of len(post_data) * period_days.
+    event_investment_agg = agg_investment_df.copy()
+    event_investment_agg["Date"] = pd.to_datetime(event_investment_agg["Date"])
+    pre_period_end = pd.to_datetime(pre_period[1])
+    historical = event_investment_agg[
+        event_investment_agg["Date"] <= pre_period_end
+    ].copy()
+    historical["weeks"] = historical["Date"].dt.to_period("W").dt.start_time
+    weekly = historical.groupby("weeks")["investment"].sum().reset_index()
+    weekly["historical_avg"] = (
+        weekly["investment"].rolling(window=12, min_periods=1).mean().shift(1)
+    )
+    historical_avg = weekly["historical_avg"].iloc[-1]
+
+    post_period_days_span = (
+        pd.to_datetime(post_period[1]) - pd.to_datetime(post_period[0])
+    ).days + 1  # 21 days
+    correct_periods_in_post = post_period_days_span / 7  # 3 weeks-equivalent
+    buggy_periods_in_post = (
+        post_period_days_span / period_days / 7
+    )  # old bug: len(post_data)/7 = 7/7 = 1 week-equivalent
+
+    expected_correct = historical_avg * correct_periods_in_post
+    expected_buggy = historical_avg * buggy_periods_in_post
+
+    actual = results_dict["total_investment_pre_period"]
+    assert actual == pytest.approx(expected_correct, rel=1e-6)
+    assert actual > 2 * expected_buggy, (
+        "total_investment_pre_period looks scaled like the old buggy "
+        "len(post_data)/7 formula instead of len(post_data)*period_days/7"
+    )

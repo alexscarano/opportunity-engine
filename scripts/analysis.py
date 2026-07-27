@@ -521,12 +521,15 @@ def run_causal_impact_analysis(
             weekly_investment_df["historical_avg"].iloc[-1]
         ):
             # post_data rows are native periods. When historical_avg is a
-            # per-week average (period_days=1, re-bucketed above), the post
-            # period spans len(post_data)/7 weeks. When historical_avg is
+            # per-week average (period_days<7, re-bucketed above), each
+            # post_data row spans period_days days, so the post period spans
+            # len(post_data) * period_days / 7 weeks. When historical_avg is
             # already per-native-period (period_days>=7, no re-bucketing),
-            # post_data's rows ARE the periods, so no /7 conversion applies.
+            # post_data's rows ARE the periods, so no conversion applies.
             periods_in_post = (
-                len(post_data) if period_days >= 7 else len(post_data) / 7
+                len(post_data)
+                if period_days >= 7
+                else len(post_data) * period_days / 7
             )
             total_investment_pre_period = (
                 weekly_investment_df["historical_avg"].iloc[-1] * periods_in_post
