@@ -242,5 +242,41 @@ class TestGlobalReportMonthlyExtrapolationFactor(unittest.TestCase):
         self.assertIn("R$ 30.0k", html_out)
 
 
+class TestGlobalReportFailsLoudly(unittest.TestCase):
+    """Falha do Gemini não pode virar 'sucesso': antes o erro era engolido com um
+    `return`, o chamador imprimia SUCESSO e global_report.html nunca existia."""
+
+    def test_api_error_raises_and_writes_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            advertiser = "TestAdv"
+            output_dir = os.path.join(tmp, advertiser, "global_saturation_analysis")
+            os.makedirs(output_dir, exist_ok=True)
+            with open(os.path.join(output_dir, "SATURATION_CURVE.md"), "w", encoding="utf-8") as f:
+                f.write("# dummy\n")
+
+            fake_client = MagicMock()
+            fake_client.model_name = "fake-model"
+            fake_client.generate_content.side_effect = Exception("504 Deadline Exceeded")
+
+            with self.assertRaises(RuntimeError):
+                generate_global_gemini_report(
+                    fake_client,
+                    {
+                        "output_directory": tmp,
+                        "advertiser_name": advertiser,
+                        "average_ticket": 0,
+                        "conversion_rate_from_kpi_to_bo": 0,
+                        "primary_business_metric_name": "Leads",
+                    },
+                    scenarios=[],
+                    total_investment=1000.0,
+                    kpi_projections={},
+                )
+
+            self.assertFalse(
+                os.path.exists(os.path.join(output_dir, "global_report.html"))
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

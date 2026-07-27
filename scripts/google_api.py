@@ -108,7 +108,9 @@ Regras:
   "CONVERSIONS".
 """
 
-    response = model.generate_content(prompt)
+    # ponytail: deadline total; sem ele um 503 do Gemini vira ~10 min de retry
+    # silencioso e o botão da UI fica girando. Ver GEMINI_REQUEST_OPTIONS.
+    response = model.generate_content(prompt, request_options={"timeout": 60})
     cleaned_response_text = (
         response.text.strip().replace("```json\n", "").replace("\n```", "").replace("```", "")
     )

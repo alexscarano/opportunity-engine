@@ -11,8 +11,14 @@ import json
 import os
 import html
 import pandas as pd
-import google.generativeai as genai
 from presentation import format_number
+
+# ponytail: sem isso o google-api-core faz retry com backoff exponencial em 503
+# ("model experiencing high demand") por até ~10 min POR chamada, sem imprimir
+# nada -- o painel de log da UI congela e parece travado. Com deadline total, a
+# falha cai no except abaixo e vira uma mensagem de erro visível.
+# Subir se algum prompt legitimamente demorar mais que isso.
+GEMINI_REQUEST_OPTIONS = {"timeout": 300}
 
 
 def _get_image_as_base64(path):
@@ -177,7 +183,9 @@ A matriz de correlação entre o investimento diário total e os KPIs de negóci
 </correlation_analysis>
 """
     try:
-        response = gemini_client.generate_content(prompt)
+        response = gemini_client.generate_content(
+            prompt, request_options=GEMINI_REQUEST_OPTIONS
+        )
         cleaned_response_text = (
             response.text.strip().replace("```json\n", "").replace("\n```", "")
         )
@@ -185,12 +193,12 @@ A matriz de correlação entre o investimento diário total e os KPIs de negóci
         print("   - Full narrative generated and parsed successfully.")
         return narrative
     except Exception as e:
-        print(
-            f"   - ERROR: Could not generate or parse the full narrative from Gemini. Details: {e}"
-        )
-        return json.loads(
-            json_schema.replace("...", "Error: Could not generate content.")
-        )
+        # Devolver o schema com placeholders fazia o HTML/JSON serem gravados e o
+        # chamador anunciar "SUCESSO" com um relatório cujo texto é a descrição
+        # dos campos do prompt. Melhor não entregar relatório nenhum.
+        raise RuntimeError(
+            f"não foi possível gerar/parsear a narrativa do Gemini: {e}"
+        ) from e
 
 
 def generate_markdown_report_from_narrative(
@@ -613,8 +621,9 @@ def generate_global_gemini_report(
 
     # --- 4. Call Gemini API ---
     try:
-        model = genai.GenerativeModel(gemini_client.model_name)
-        response = gemini_client.generate_content(prompt)
+        response = gemini_client.generate_content(
+            prompt, request_options=GEMINI_REQUEST_OPTIONS
+        )
         cleaned_response_text = (
             response.text.strip().replace("```json\n", "").replace("\n```", "")
         )
@@ -627,10 +636,11 @@ def generate_global_gemini_report(
             json.dump(narrative, f, ensure_ascii=False, indent=4)
 
     except Exception as e:
-        print(
-            f"   - ERROR: Could not generate or parse the global narrative from Gemini. Details: {e}"
-        )
-        return
+        # `return` silencioso fazia o chamador imprimir "SUCESSO! Análise
+        # estratégica global concluída" sem que global_report.html existisse.
+        raise RuntimeError(
+            f"não foi possível gerar/parsear a narrativa global do Gemini: {e}"
+        ) from e
 
     # --- 5. Assemble HTML Report ---
     output_filename = os.path.join(global_output_dir, "global_report.html")
