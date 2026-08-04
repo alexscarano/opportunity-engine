@@ -1565,6 +1565,8 @@ with tab1:
                 st.session_state["show_run_success_balloons"] = True
                 st.rerun()
             else:
+                # Toda falha fatal chega aqui traduzida com prefixo "ERRO:"/"ERRO CRÍTICO:"
+                # pelo _RULES de logger.py -- mudar esses prefixos lá quebra este match.
                 error_line = next(
                     (line for line in reversed(log_lines) if "ERRO" in line), None
                 )
