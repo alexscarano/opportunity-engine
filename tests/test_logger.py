@@ -161,6 +161,17 @@ class TestLoggingSetup(unittest.TestCase):
         self.assertIn("boom", errors)
         self.assertIn("Traceback", errors)
 
+    def test_log_context_ignores_deliberate_system_exit(self):
+        # Simulate the real scenario: an error is logged, then exit(1) is called
+        with self.assertRaises(SystemExit):
+            with LogContext("ns"):
+                logging.getLogger("ns").error("Simulated error before exit")
+                raise SystemExit(1)
+
+        errors = (Path(self._tmp.name) / "ns.errors.log").read_text(encoding="utf-8")
+        self.assertIn("Simulated error before exit", errors)  # Original error is logged
+        self.assertNotIn("critical, unexpected error", errors)  # But not the critical wrapper
+
 
 if __name__ == "__main__":
     unittest.main()

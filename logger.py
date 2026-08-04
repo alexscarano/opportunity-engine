@@ -498,7 +498,7 @@ class LogContext:
         sys.stderr.flush()
         sys.stdout = self.stdout
         sys.stderr = self.stderr
-        if exc_type:
+        if exc_type and not issubclass(exc_type, SystemExit):
             logging.getLogger(self.namespace).critical(
                 "A critical, unexpected error occurred during the main process: %s",
                 exc_val,
