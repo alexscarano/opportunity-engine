@@ -736,7 +736,7 @@ if "user_id" not in st.session_state:
         password = st.text_input("Senha", type="password", key="login_password")
 
         if auth_mode == "Login":
-            if st.button("Entrar", use_container_width=True):
+            if st.button("Entrar", width="stretch"):
                 user_id = verify_user(username, password)
                 if user_id:
                     st.session_state["user_id"] = user_id
@@ -750,7 +750,7 @@ if "user_id" not in st.session_state:
                 else:
                     st.error("Usuário ou senha incorretos.")
         else:
-            if st.button("Cadastrar", use_container_width=True):
+            if st.button("Cadastrar", width="stretch"):
                 if not username or not password:
                     st.error("Preencha usuário e senha.")
                 else:
@@ -824,7 +824,7 @@ st.sidebar.markdown(
 
 # Sidebar user card & Logout
 st.sidebar.markdown(f"**Conectado como:** {st.session_state['username']}")
-if st.sidebar.button("Sair/Logout", use_container_width=True):
+if st.sidebar.button("Sair/Logout", width="stretch"):
     # Remove server-side session
     sid = st.query_params.get("sid")
     if sid:
@@ -869,7 +869,7 @@ if project_options:
 
     # Project Rename UI
     if st.sidebar.button(
-        "Renomear Projeto Atual", key="rename_proj_btn", use_container_width=True
+        "Renomear Projeto Atual", key="rename_proj_btn", width="stretch"
     ):
         st.session_state["show_rename_confirm"] = True
 
@@ -879,7 +879,7 @@ if project_options:
         )
         col_ren1, col_ren2 = st.sidebar.columns(2)
         with col_ren1:
-            if st.button("Salvar", key="confirm_rename_btn", use_container_width=True):
+            if st.button("Salvar", key="confirm_rename_btn", width="stretch"):
                 if rename_user_project(
                     st.session_state["user_id"], selected_project, new_name
                 ):
@@ -889,13 +889,13 @@ if project_options:
                 else:
                     st.error("Nome inválido ou já em uso.")
         with col_ren2:
-            if st.button("Cancelar", key="cancel_rename_btn", use_container_width=True):
+            if st.button("Cancelar", key="cancel_rename_btn", width="stretch"):
                 st.session_state["show_rename_confirm"] = False
                 st.rerun()
 
     # Project Deletion UI
     if st.sidebar.button(
-        "Excluir Projeto Atual", key="delete_proj_btn", use_container_width=True
+        "Excluir Projeto Atual", key="delete_proj_btn", width="stretch"
     ):
         st.session_state["show_delete_confirm"] = True
 
@@ -906,7 +906,7 @@ if project_options:
         col_del1, col_del2 = st.sidebar.columns(2)
         with col_del1:
             if st.button(
-                "Sim, Excluir", key="confirm_delete_btn", use_container_width=True
+                "Sim, Excluir", key="confirm_delete_btn", width="stretch"
             ):
                 path_to_delete = st.session_state["active_config_path"]
                 # Verify ownership to prevent IDOR on delete
@@ -962,7 +962,7 @@ if project_options:
                 else:
                     st.error("Erro: Acesso não autorizado.")
         with col_del2:
-            if st.button("Cancelar", key="cancel_delete_btn", use_container_width=True):
+            if st.button("Cancelar", key="cancel_delete_btn", width="stretch"):
                 st.session_state["show_delete_confirm"] = False
                 st.rerun()
 else:
@@ -1229,17 +1229,17 @@ with tab1:
             submit_btn = st.form_submit_button(
                 "Construir Motor de Oportunidades",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
             )
         with col_btn2:
             save_settings_btn = st.form_submit_button(
-                "Salvar Configurações", type="secondary", use_container_width=True
+                "Salvar Configurações", type="secondary", width="stretch"
             )
         with col_btn3:
             ai_suggest_btn = st.form_submit_button(
                 "Sugerir com IA",
                 type="secondary",
-                use_container_width=True,
+                width="stretch",
                 help=(
                     "Analisa os arquivos enviados e sugere: Coluna do KPI, se o "
                     "KPI já está em R$, e o Objetivo da Otimização. Não sugere "
@@ -1565,9 +1565,14 @@ with tab1:
                 st.session_state["show_run_success_balloons"] = True
                 st.rerun()
             else:
-                status_container.error(
-                    "Houve um erro na execução do motor. Verifique os logs acima."
+                error_line = next(
+                    (line for line in reversed(log_lines) if "ERRO" in line), None
                 )
+                msg = "Houve um erro na execução do motor."
+                if error_line:
+                    msg += f"\n\n{error_line.strip()}"
+                msg += "\n\nVerifique os logs acima para mais detalhes."
+                status_container.error(msg)
 
 with tab2:
     st.header("Análise de Impacto Causal (Por Evento)")
@@ -1620,7 +1625,7 @@ with tab2:
                     build_events_overview(
                         pd.read_csv(detected_events_path), validated_keys
                     ),
-                    use_container_width=True,
+                    width="stretch",
                 )
                 st.markdown("---")
 
@@ -1707,13 +1712,13 @@ with tab2:
                     line_chart_df = pd.read_csv(os.path.join(selected_dir, "line_chart_data.csv"))
                     st.plotly_chart(
                         build_causal_line_chart(line_chart_df, kpi_name=kpi_name),
-                        use_container_width=True,
+                        width="stretch",
                     )
                 else:
                     # Fallback to PNG line chart
                     png_line_charts = glob.glob(os.path.join(selected_dir, "*line_chart*.png"))
                     if png_line_charts:
-                        st.image(png_line_charts[0], caption="Gráfico Resumo (Impacto Causal)", use_container_width=True)
+                        st.image(png_line_charts[0], caption="Gráfico Resumo (Impacto Causal)", width="stretch")
 
                 # Bar charts
                 if has_csvs:
@@ -1727,12 +1732,12 @@ with tab2:
                     with col1:
                         st.plotly_chart(
                             build_investment_bar_chart(investment_chart_df),
-                            use_container_width=True,
+                            width="stretch",
                         )
                     with col2:
                         st.plotly_chart(
                             build_sessions_bar_chart(sessions_chart_df, kpi_name=kpi_name),
-                            use_container_width=True,
+                            width="stretch",
                         )
                 else:
                     # Fallback to PNG bar charts
@@ -1743,10 +1748,10 @@ with tab2:
                         col1, col2 = st.columns(2)
                         with col1:
                             if png_inv:
-                                st.image(png_inv[0], caption="Pico de Investimento (Intervenção)", use_container_width=True)
+                                st.image(png_inv[0], caption="Pico de Investimento (Intervenção)", width="stretch")
                         with col2:
                             if png_sess:
-                                st.image(png_sess[0], caption="Efeito Causal no KPI", use_container_width=True)
+                                st.image(png_sess[0], caption="Efeito Causal no KPI", width="stretch")
 
                 if methodology_narrative:
                     st.write(methodology_narrative)
@@ -1784,13 +1789,13 @@ with tab2:
                     accuracy_chart_df = pd.read_csv(os.path.join(selected_dir, "accuracy_data.csv"))
                     st.plotly_chart(
                         build_accuracy_chart(accuracy_chart_df, kpi_name=kpi_name),
-                        use_container_width=True,
+                        width="stretch",
                     )
                 else:
                     # Fallback to PNG accuracy plot
                     png_acc = glob.glob(os.path.join(selected_dir, "*accuracy*.png"))
                     if png_acc:
-                        st.image(png_acc[0], caption="Acurácia do Modelo Pré-Intervenção", use_container_width=True)
+                        st.image(png_acc[0], caption="Acurácia do Modelo Pré-Intervenção", width="stretch")
 
                 # 8. Assumptions Appendix
                 avg_ticket = metrics.get("avg_ticket", 0.0)
@@ -2299,7 +2304,7 @@ with tab3:
                 )
 
                 st.dataframe(
-                    scenario_df_display, use_container_width=True, hide_index=True
+                    scenario_df_display, width="stretch", hide_index=True
                 )
 
                 st.markdown("---")
@@ -2605,7 +2610,7 @@ with tab3:
                     margin=dict(l=20, r=20, t=50, b=20),
                 )
 
-                st.plotly_chart(fig_curve, use_container_width=True)
+                st.plotly_chart(fig_curve, width="stretch")
 
                 st.markdown("---")
                 st.markdown("### Curva de Custo Marginal (iCPA)")
@@ -2623,7 +2628,7 @@ with tab3:
                         target_cpa=target_cpa,
                         target_icpa=target_icpa,
                     ),
-                    use_container_width=True,
+                    width="stretch",
                 )
 
                 if config.get("optimization_target") == "REVENUE":
@@ -2638,7 +2643,7 @@ with tab3:
                         build_revenue_roi_curve(
                             df_plot, kpi_name=kpi_name, monthly_factor=DAYS_IN_MONTH
                         ),
-                        use_container_width=True,
+                        width="stretch",
                     )
 
                 st.markdown("---")
@@ -2656,7 +2661,7 @@ with tab3:
                         baseline_monthly_inv=baseline_monthly_inv,
                         optimal_monthly_inv=optimal_point["Monthly_Investment"],
                     ),
-                    use_container_width=True,
+                    width="stretch",
                 )
 
                 ind_csv_path_overview = os.path.join(
@@ -2675,7 +2680,7 @@ with tab3:
                         build_channel_saturation_comparison(
                             pd.read_csv(ind_csv_path_overview)
                         ),
-                        use_container_width=True,
+                        width="stretch",
                     )
 
                 # --- NEW: Individual Curves Visualization ---
@@ -2706,7 +2711,7 @@ with tab3:
                             build_response_curve_individual(
                                 channel_df, selected_channel
                             ),
-                            use_container_width=True,
+                            width="stretch",
                         )
                     else:
                         # Sanitize channel name for filename
@@ -2782,7 +2787,7 @@ with tab3:
                             showlegend=False,
                             margin=dict(r=160),
                         )
-                        st.plotly_chart(fig_hist, use_container_width=True)
+                        st.plotly_chart(fig_hist, width="stretch")
 
                 strat_cols = [
                     c
@@ -2828,7 +2833,7 @@ with tab3:
                             showlegend=False,
                             margin=dict(r=160),
                         )
-                        st.plotly_chart(fig_strat, use_container_width=True)
+                        st.plotly_chart(fig_strat, width="stretch")
 
                 st.markdown("---")
                 st.markdown("## Recomendações Estratégicas")
