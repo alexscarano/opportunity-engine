@@ -1191,12 +1191,16 @@ with tab1:
             inv_file = st.file_uploader(
                 "Investimento (obrigatório)",
                 type=["csv"],
-                help="Investimento por canal de mídia (diário, semanal ou mensal).",
+                help="Investimento por canal de mídia (diário, semanal ou mensal). Precisa ter "
+                "a mesma frequência do arquivo de Performance -- não é possível misturar um "
+                "diário com outro semanal.",
             )
             perf_file = st.file_uploader(
                 "Performance (obrigatório)",
                 type=["csv"],
-                help="Histórico de resultados/KPIs (diário, semanal ou mensal).",
+                help="Histórico de resultados/KPIs (diário, semanal ou mensal). Precisa ter a "
+                "mesma frequência do arquivo de Investimento -- não é possível misturar um "
+                "diário com outro semanal.",
             )
             trends_file = st.file_uploader(
                 "Tendências (opcional)",
