@@ -4,6 +4,7 @@ import os
 
 import logging
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -24,6 +25,7 @@ from data_preprocessor import (
     detect_cadence,
     drop_partial_periods,
     drop_bi_export_footer_rows,
+    suggest_causal_config,
 )
 
 
@@ -1166,3 +1168,121 @@ def test_load_and_prepare_data_no_duplicate_dates_is_noop(tmp_path, caplog):
     out = caplog.text
     assert "data duplicada" not in out
     assert kpi_df["kpi"].tolist() == [10.0, 20.0, 30.0]
+
+
+# --- suggest_causal_config ---
+
+
+def _flat_then_spike_channel(product_group, spike_value, n_baseline=5):
+    """Builds one channel's rows: `n_baseline` weekly periods flat at 100,
+    then one final period at `spike_value`. With a perfectly flat baseline,
+    every baseline period's percentage_change vs. its own rolling history is
+    exactly 0%, so only the final spike shows up as a non-zero pct change --
+    that isolates a single, hand-computable data point per channel."""
+    dates = pd.date_range("2025-01-01", periods=n_baseline + 1, freq="7D")
+    investment = [100.0] * n_baseline + [float(spike_value)]
+    return pd.DataFrame(
+        {"Date": dates, "Product Group": product_group, "investment": investment}
+    )
+
+
+def test_suggest_causal_config_min_pre_period_days_matches_8x_cadence():
+    df = _flat_then_spike_channel("A", 110)
+    result = suggest_causal_config(df)
+    assert result["min_pre_period_days"] == 56  # 8 * 7-day (weekly) cadence
+
+
+def test_suggest_causal_config_min_pre_period_days_capped_at_365():
+    # 6 dates 60 days apart -> median 60 -> non-canonical cadence, raw 60.
+    dates = pd.date_range("2025-01-01", periods=6, freq="60D")
+    df = pd.DataFrame(
+        {"Date": dates, "Product Group": "A", "investment": [100.0] * 6}
+    )
+    result = suggest_causal_config(df)
+    assert result["min_pre_period_days"] == 365  # 8 * 60 = 480, capped
+
+
+def test_suggest_causal_config_percentile_90_increase_and_decrease():
+    # Four isolated channels, each contributing exactly one non-zero
+    # percentage_change: +10%, +50%, -5%, -25%. Pooled increases = [10, 50],
+    # pooled decreases (abs) = [5, 25]. numpy's default linear percentile:
+    # percentile(90, [10, 50]) = 10 + 0.9*(50-10) = 46
+    # percentile(90, [5, 25])  = 5 + 0.9*(25-5)   = 23
+    df = pd.concat(
+        [
+            _flat_then_spike_channel("A", 110),  # +10%
+            _flat_then_spike_channel("B", 150),  # +50%
+            _flat_then_spike_channel("C", 95),  # -5%
+            _flat_then_spike_channel("D", 75),  # -25%
+        ],
+        ignore_index=True,
+    )
+    result = suggest_causal_config(df)
+    assert result["increase_threshold_percent"] == 46
+    assert result["decrease_threshold_percent"] == 23
+
+
+def test_suggest_causal_config_thresholds_clamped_to_100():
+    # A single +900% spike -> percentile of a 1-element array is that
+    # element itself (900), which must be clamped to the field's max (100).
+    df = _flat_then_spike_channel("A", 1000)
+    result = suggest_causal_config(df)
+    assert result["increase_threshold_percent"] == 100
+
+
+def test_suggest_causal_config_falls_back_to_defaults_when_insufficient_data():
+    # Each channel has only 2 periods -- below find_events' own "< 3 periods"
+    # guard -- so neither channel contributes any percentage_change and the
+    # thresholds fall back to the pre-existing manual defaults (40/30).
+    dates = pd.date_range("2025-01-01", periods=2, freq="7D")
+    df = pd.concat(
+        [
+            pd.DataFrame(
+                {"Date": dates, "Product Group": "A", "investment": [100.0, 150.0]}
+            ),
+            pd.DataFrame(
+                {"Date": dates, "Product Group": "B", "investment": [100.0, 60.0]}
+            ),
+        ],
+        ignore_index=True,
+    )
+    result = suggest_causal_config(df)
+    assert result["increase_threshold_percent"] == 40
+    assert result["decrease_threshold_percent"] == 30
+
+
+def test_suggest_causal_config_investment_limit_factor_matches_max_over_mean():
+    # 9 periods at 100 + 1 at 400 -> mean=130, max=400, ratio=400/130=3.0769,
+    # rounded to the slider's 0.5 step -> 3.0.
+    dates = pd.date_range("2025-01-01", periods=10, freq="1D")
+    df = pd.DataFrame(
+        {
+            "Date": dates,
+            "Product Group": "A",
+            "investment": [100.0] * 9 + [400.0],
+        }
+    )
+    result = suggest_causal_config(df)
+    assert result["investment_limit_factor"] == 3.0
+
+
+def test_suggest_causal_config_investment_limit_factor_clamped_to_bounds():
+    flat_dates = pd.date_range("2025-01-01", periods=5, freq="1D")
+    flat_df = pd.DataFrame(
+        {"Date": flat_dates, "Product Group": "A", "investment": [100.0] * 5}
+    )
+    assert suggest_causal_config(flat_df)["investment_limit_factor"] == 1.5
+
+    # max/mean is mathematically bounded above by n (the point count) as the
+    # spike grows -- with only 5 points the ratio can never actually reach 5,
+    # so this uses 10 points (9 flat + 1 huge spike) to genuinely exceed the
+    # 5.0 ceiling and exercise the clamp, not just favorable rounding.
+    extreme_dates = pd.date_range("2025-01-01", periods=10, freq="1D")
+    extreme_df = pd.DataFrame(
+        {
+            "Date": extreme_dates,
+            "Product Group": "A",
+            "investment": [10.0] * 9 + [100000.0],
+        }
+    )
+    assert suggest_causal_config(extreme_df)["investment_limit_factor"] == 5.0

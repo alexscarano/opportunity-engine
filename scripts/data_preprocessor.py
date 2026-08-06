@@ -233,6 +233,93 @@ def detect_cadence(dates):
     return int(round(median_days))
 
 
+def suggest_causal_config(daily_investment_df):
+    """
+    Deriva sugestões para min_pre_period_days, increase/decrease_threshold_percent
+    e investment_limit_factor a partir do histórico real de investimento --
+    sem chamar IA, só estatística sobre os dados. Espelha exatamente a
+    matemática que o motor já aplica em tempo de execução, pra a sugestão
+    bater com o comportamento real:
+
+    - min_pre_period_days: analysis.py já aplica um piso de 8 períodos via
+      periods_to_days(), independente do valor manual configurado. Sugerimos
+      esse piso direto (8 * cadência), capado em 365 dias.
+    - increase/decrease_threshold_percent: find_events() (analysis.py) calcula
+      percentage_change de cada período vs. média móvel dos 12 períodos
+      anteriores, por canal, e já loga aviso quando >25% dos períodos viram
+      "evento" (limiar capturando ruído). Replicamos esse cálculo aqui e
+      usamos o percentil 90 da distribuição real (positivos = aumento,
+      negativos em módulo = queda) -- deixa uma folga clara abaixo dos 25%.
+    - investment_limit_factor: run_opportunity_projection (analysis.py) usa
+      max(investment) * investment_limit_factor pra definir até onde simular
+      a curva de resposta. Sugerimos max/mean do histórico como um proxy de
+      "quanto essa conta já provou suportar de variação", clampado nos
+      mesmos limites do slider (1.5-5.0) e arredondado ao seu step (0.5).
+    """
+    cadence = detect_cadence(daily_investment_df["Date"])
+    min_pre_period_days = int(min(365, 8 * cadence))
+
+    all_pct_changes = []
+    for _, product_df in daily_investment_df.groupby("Product Group"):
+        product_df = product_df.sort_values("Date")
+        if cadence >= 7:
+            bucket_key = product_df["Date"]
+        else:
+            bucket_key = product_df["Date"].dt.to_period("W-MON").dt.start_time
+        period_investment = (
+            product_df.assign(_bucket=bucket_key)
+            .groupby("_bucket")["investment"]
+            .sum()
+            .reset_index()
+        )
+        if len(period_investment) < 3:
+            continue
+
+        period_investment["historical_avg"] = (
+            period_investment["investment"]
+            .rolling(window=12, min_periods=1)
+            .mean()
+            .shift(1)
+        )
+        period_investment = period_investment.dropna(subset=["historical_avg"])
+        period_investment = period_investment[period_investment["historical_avg"] > 0]
+        if period_investment.empty:
+            continue
+
+        pct_change = (
+            period_investment["investment"] / period_investment["historical_avg"] - 1
+        ) * 100
+        all_pct_changes.extend(pct_change.tolist())
+
+    if all_pct_changes:
+        pct_series = pd.Series(all_pct_changes)
+        increases = pct_series[pct_series > 0]
+        decreases = pct_series[pct_series < 0].abs()
+        increase_threshold_percent = (
+            int(round(np.percentile(increases, 90))) if len(increases) else 40
+        )
+        decrease_threshold_percent = (
+            int(round(np.percentile(decreases, 90))) if len(decreases) else 30
+        )
+        increase_threshold_percent = max(1, min(100, increase_threshold_percent))
+        decrease_threshold_percent = max(1, min(100, decrease_threshold_percent))
+    else:
+        increase_threshold_percent = 40
+        decrease_threshold_percent = 30
+
+    investment = daily_investment_df["investment"]
+    mean_investment = investment.mean()
+    raw_factor = investment.max() / mean_investment if mean_investment > 0 else 1.5
+    investment_limit_factor = round(max(1.5, min(5.0, raw_factor)) * 2) / 2
+
+    return {
+        "min_pre_period_days": min_pre_period_days,
+        "increase_threshold_percent": increase_threshold_percent,
+        "decrease_threshold_percent": decrease_threshold_percent,
+        "investment_limit_factor": investment_limit_factor,
+    }
+
+
 def drop_partial_periods(df, date_col, cadence):
     """
     Descarta linhas cuja data representa um período "parcial" (mais curto
