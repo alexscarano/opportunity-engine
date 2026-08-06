@@ -2365,6 +2365,19 @@ with tab3:
                     scenario_df_display, width="stretch", hide_index=True
                 )
 
+                if np.isclose(
+                    sim_inv, saturation_point["Monthly_Investment"], rtol=0, atol=1e-6
+                ):
+                    st.info(
+                        "Ponto Recomendado e Cenário de Saturação empataram porque o Ponto "
+                        "Recomendado já está no topo da faixa liberada pelos filtros da "
+                        "sidebar (ou do teto da curva simulada) -- não sobra investimento "
+                        "depois dele pra buscar saturação. Pra separar os dois, aperte um "
+                        "filtro em 'Filtros de Limitação' (Orçamento Máx., Target CPA/ROAS "
+                        "ou % Incrementalidade Mínima) ou aumente o 'Limite de Investimento "
+                        "Simulado' em Configurações da Análise Causal."
+                    )
+
                 st.markdown("---")
                 st.markdown("### Métricas da Estratégia Ótima")
 
