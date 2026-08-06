@@ -320,6 +320,32 @@ def suggest_causal_config(daily_investment_df):
     }
 
 
+def parse_investment_columns(df, date_col, channel_col, investment_col, date_format=None):
+    """
+    Renomeia e limpa um dataframe de investimento pro formato Date/Product Group/investment,
+    usado tanto pelo pipeline principal (load_and_prepare_data) quanto pela sugestão
+    automática (suggest_causal_config via streamlit) -- centraliza a receita pra elas não
+    divergirem silenciosamente. Retorna (df limpo, valores brutos de investimento antes do
+    parsing numérico) -- o caller decide o que fazer com uma taxa alta de NaN (erro forte no
+    pipeline principal, só um aviso na sugestão).
+    """
+    df = df.rename(
+        columns={date_col: "Date", channel_col: "Product Group", investment_col: "investment"}
+    )
+    df = drop_bi_export_footer_rows(df, "Date")
+    df["Product Group"] = df["Product Group"].str.strip().str.upper()
+    investment_raw_values = df["investment"]
+    # astype(float): pd.to_numeric infers int64 when every value in the column
+    # is a whole number (e.g. a channel with no decimal spend). The adstock step
+    # below writes float values back into this column via .loc, and pandas
+    # raises TypeError instead of upcasting an int64 column in that path.
+    df["investment"] = robust_numeric_parsing(
+        df["investment"], column_name="investment"
+    ).astype(float)
+    df["Date"] = robust_date_parsing(df["Date"], date_format=date_format)
+    return df, investment_raw_values
+
+
 def drop_partial_periods(df, date_col, cadence):
     """
     Descarta linhas cuja data representa um período "parcial" (mais curto
@@ -863,25 +889,12 @@ def load_and_prepare_data(config):
             "investment",
             "coluna de investimento do arquivo de investimento",
         )
-        daily_investment_df.rename(
-            columns={
-                inv_date_col: "Date",
-                inv_channel_col: "Product Group",
-                inv_value_col: "investment",
-            },
-            inplace=True,
-        )
-        daily_investment_df = drop_bi_export_footer_rows(daily_investment_df, "Date")
-
-        # Standardize product group names: strip whitespace and normalize case so
-        # the same channel exported with inconsistent casing doesn't fragment
-        # into separate pivot_table columns.
-        daily_investment_df["Product Group"] = (
-            daily_investment_df["Product Group"].str.strip().str.upper()
-        )
-        investment_raw_values = daily_investment_df["investment"]
-        daily_investment_df["investment"] = robust_numeric_parsing(
-            daily_investment_df["investment"], column_name="investment"
+        daily_investment_df, investment_raw_values = parse_investment_columns(
+            daily_investment_df,
+            inv_date_col,
+            inv_channel_col,
+            inv_value_col,
+            date_format=date_formats.get("investment_file"),
         )
         investment_nan_ratio = (
             daily_investment_df["investment"].isna().mean() if len(daily_investment_df) else 0
@@ -904,9 +917,6 @@ def load_and_prepare_data(config):
         # --- Date Formatting ---
         kpi_df["Date"] = robust_date_parsing(
             kpi_df["Date"], date_format=date_formats.get("performance_file")
-        )
-        daily_investment_df["Date"] = robust_date_parsing(
-            daily_investment_df["Date"], date_format=date_formats.get("investment_file")
         )
 
         # --- Data Cleaning & Validation ---

@@ -625,6 +625,8 @@ from data_preprocessor import (
     guess_trends_col,
     guess_kpi_col,
     read_csv_robust,
+    parse_investment_columns,
+    suggest_causal_config,
 )
 from google_api import suggest_form_fields
 
@@ -1097,8 +1099,8 @@ with tab1:
                 min_pre_period_days = st.number_input(
                     "Dias Mínimos Pré-Evento",
                     min_value=7,
-                    max_value=90,
-                    value=14,
+                    max_value=365,
+                    value=st.session_state.get("ai_suggested_min_pre_period_days", 14),
                     help="Dias de histórico exigidos antes do evento pra treinar o modelo causal "
                     "(padrão: 14, reduzido de 30). Menos dias deixa mais eventos serem analisados, "
                     "mas com um modelo mais instável e um R² menos confiável; mais dias analisa "
@@ -1133,7 +1135,7 @@ with tab1:
                     "Var. Mínima de Aumento de Investimento (%)",
                     min_value=1,
                     max_value=100,
-                    value=40,
+                    value=st.session_state.get("ai_suggested_increase_threshold_percent", 40),
                     help="Quanto o investimento semanal precisa subir (vs. média das 12 semanas "
                     "anteriores) pra ser detectado como um 'pico' a analisar. Valor baixo encontra "
                     "mais eventos candidatos, inclusive picos pequenos/ruído; valor alto só "
@@ -1143,7 +1145,7 @@ with tab1:
                     "Var. Mínima de Queda de Investimento (%)",
                     min_value=1,
                     max_value=100,
-                    value=30,
+                    value=st.session_state.get("ai_suggested_decrease_threshold_percent", 30),
                     help="Mesma lógica do campo acima, mas pra quedas de investimento: quanto a "
                     "verba semanal precisa cair (vs. média das 12 semanas anteriores) pra virar um "
                     "evento de 'corte de verba' a analisar.",
@@ -1179,7 +1181,7 @@ with tab1:
                     "Limite de Investimento Simulado (Elasticidade)",
                     min_value=1.5,
                     max_value=5.0,
-                    value=1.5,
+                    value=st.session_state.get("ai_suggested_investment_limit_factor", 1.5),
                     step=0.5,
                     help="Até quantas vezes o gasto médio atual a curva de resposta (aba Elasticidade) "
                     "é simulada. Se o 'Cenário de Saturação' sempre empatar com o 'Ponto Recomendado', "
@@ -1245,12 +1247,15 @@ with tab1:
                 type="secondary",
                 width="stretch",
                 help=(
-                    "Analisa os arquivos enviados e sugere: Coluna do KPI, se o "
-                    "KPI já está em R$, e o Objetivo da Otimização. Não sugere "
-                    "Ticket Médio, Taxa de Conversão nem os limites da Análise "
-                    "Causal -- esses continuam manuais. Decide só pelos nomes de "
-                    "coluna e uma amostra de linhas do CSV de Performance; requer "
-                    "Chave de API do Gemini preenchida."
+                    "Analisa os arquivos enviados e sugere: Coluna do KPI, se o KPI já "
+                    "está em R$, e o Objetivo da Otimização (via IA -- requer Chave de "
+                    "API do Gemini preenchida). Também sugere, a partir do histórico do "
+                    "arquivo de Investimento (cálculo estatístico, não usa IA nem "
+                    "precisa de chave): Dias Mínimos Pré-Evento, Var. Mínima de "
+                    "Aumento/Queda de Investimento e Limite de Investimento Simulado. "
+                    "Não sugere Ticket Médio, Taxa de Conversão, Ajuste Mínimo do "
+                    "Modelo (R²) nem Significância Máxima (p-value) -- esses continuam "
+                    "manuais."
                 ),
             )
 
@@ -1263,45 +1268,92 @@ with tab1:
             st.error(
                 "Por favor, faça upload dos arquivos de Investimento e Performance para continuar."
             )
-        elif not (gemini_key or os.environ.get("GEMINI_API_KEY")) or not gemini_model:
-            st.warning(
-                "Preencha a Chave de API do Gemini para usar a sugestão automática."
-            )
         else:
-            with st.spinner("Analisando arquivos com IA..."):
+            safe_adv_name = (
+                advertiser_name.replace(" ", "_").replace("/", "").replace("\\", "")
+            )
+            dynamic_dir = os.path.join(
+                "inputs",
+                f"user_{st.session_state['user_id']}",
+                f"{safe_adv_name}_dynamic",
+            )
+            os.makedirs(dynamic_dir, exist_ok=True)
+            perf_path = os.path.join(dynamic_dir, "performance.csv")
+            with open(perf_path, "wb") as f:
+                f.write(perf_file.getbuffer())
+            inv_path = os.path.join(dynamic_dir, "investment.csv")
+            with open(inv_path, "wb") as f:
+                f.write(inv_file.getbuffer())
+
+            suggested_anything = False
+
+            # Deterministic part: no IA, funciona mesmo sem chave do Gemini --
+            # só precisa dos dois arquivos, já garantidos pelo check acima.
+            with st.spinner("Analisando histórico de investimento..."):
                 try:
-                    active_key = gemini_key or os.environ.get("GEMINI_API_KEY")
+                    inv_date_col = guess_date_col(inv_path)
+                    inv_channel_col = guess_channel_col(inv_path)
+                    inv_investment_col = guess_investment_col(inv_path)
 
-                    safe_adv_name = (
-                        advertiser_name.replace(" ", "_").replace("/", "").replace("\\", "")
+                    inv_df = read_csv_robust(inv_path)
+                    inv_df, _ = parse_investment_columns(
+                        inv_df, inv_date_col, inv_channel_col, inv_investment_col
                     )
-                    dynamic_dir = os.path.join(
-                        "inputs",
-                        f"user_{st.session_state['user_id']}",
-                        f"{safe_adv_name}_dynamic",
+                    inv_df = inv_df.dropna(
+                        subset=["Date", "investment", "Product Group"]
                     )
-                    os.makedirs(dynamic_dir, exist_ok=True)
-                    perf_path = os.path.join(dynamic_dir, "performance.csv")
-                    with open(perf_path, "wb") as f:
-                        f.write(perf_file.getbuffer())
 
-                    performance_sample = read_csv_robust(perf_path, nrows=5)
-
-                    import google.generativeai as genai
-
-                    genai.configure(api_key=active_key)
-                    model = genai.GenerativeModel(gemini_model)
-                    suggestion = suggest_form_fields(model, performance_sample)
-
-                    st.session_state["ai_suggested_kpi_column"] = suggestion["kpi_column"]
-                    st.session_state["ai_suggested_kpi_is_monetary"] = suggestion["kpi_is_monetary"]
-                    st.session_state["ai_suggested_optimization_target"] = suggestion["optimization_target"]
-                    st.rerun()
+                    causal_suggestion = suggest_causal_config(inv_df)
+                    st.session_state["ai_suggested_min_pre_period_days"] = (
+                        causal_suggestion["min_pre_period_days"]
+                    )
+                    st.session_state["ai_suggested_increase_threshold_percent"] = (
+                        causal_suggestion["increase_threshold_percent"]
+                    )
+                    st.session_state["ai_suggested_decrease_threshold_percent"] = (
+                        causal_suggestion["decrease_threshold_percent"]
+                    )
+                    st.session_state["ai_suggested_investment_limit_factor"] = (
+                        causal_suggestion["investment_limit_factor"]
+                    )
+                    suggested_anything = True
                 except Exception as e:
                     st.warning(
-                        f"Não foi possível gerar sugestão automática: {e}. "
+                        "Não foi possível sugerir os limiares de Análise Causal "
+                        f"automaticamente a partir do arquivo de Investimento: {e}. "
                         "Mantendo os valores atuais."
                     )
+
+            # IA part: só roda com chave do Gemini configurada.
+            if not (gemini_key or os.environ.get("GEMINI_API_KEY")) or not gemini_model:
+                st.warning(
+                    "Preencha a Chave de API do Gemini para sugerir Coluna do KPI, "
+                    "KPI monetário e Objetivo da Otimização."
+                )
+            else:
+                with st.spinner("Analisando arquivos com IA..."):
+                    try:
+                        active_key = gemini_key or os.environ.get("GEMINI_API_KEY")
+                        performance_sample = read_csv_robust(perf_path, nrows=5)
+
+                        import google.generativeai as genai
+
+                        genai.configure(api_key=active_key)
+                        model = genai.GenerativeModel(gemini_model)
+                        suggestion = suggest_form_fields(model, performance_sample)
+
+                        st.session_state["ai_suggested_kpi_column"] = suggestion["kpi_column"]
+                        st.session_state["ai_suggested_kpi_is_monetary"] = suggestion["kpi_is_monetary"]
+                        st.session_state["ai_suggested_optimization_target"] = suggestion["optimization_target"]
+                        suggested_anything = True
+                    except Exception as e:
+                        st.warning(
+                            f"Não foi possível gerar sugestão automática: {e}. "
+                            "Mantendo os valores atuais."
+                        )
+
+            if suggested_anything:
+                st.rerun()
 
     if submit_btn:
         # Persist user's Gemini API Key in SQLite
