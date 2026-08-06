@@ -15,6 +15,7 @@ from analysis import (
     find_events,
     periods_to_days,
     _train_response_model,
+    _select_variance_threshold_features,
 )
 
 
@@ -392,3 +393,37 @@ def test_run_causal_impact_analysis_scales_pre_period_baseline_for_non_canonical
         "total_investment_pre_period looks scaled like the old buggy "
         "len(post_data)/7 formula instead of len(post_data)*period_days/7"
     )
+
+
+# --- _select_variance_threshold_features ---
+
+
+def test_select_variance_threshold_features_returns_empty_when_all_constant():
+    """
+    Regression: sklearn's VarianceThreshold.get_support() raises ValueError
+    ("No feature in X meets the variance threshold...") when literally every
+    candidate column is constant, instead of returning an empty mask. The
+    caller (run_causal_impact_analysis) already has a documented fallback
+    for "no features survived" (falls back to the raw transformed features),
+    but that fallback was unreachable for this exact case since the crash
+    happens while computing the candidate list, not after. This must degrade
+    to an empty list instead of raising, so the existing fallback can kick in.
+    """
+    pre_data = pd.DataFrame(
+        {"const_a": [5.0] * 10, "const_b": [0.0] * 10, "const_c": [1.0] * 10}
+    )
+    result = _select_variance_threshold_features(
+        pre_data, ["const_a", "const_b", "const_c"]
+    )
+    assert result == []
+
+
+def test_select_variance_threshold_features_keeps_only_varying_columns():
+    pre_data = pd.DataFrame(
+        {
+            "varies": np.arange(10, dtype=float),
+            "constant": [1.0] * 10,
+        }
+    )
+    result = _select_variance_threshold_features(pre_data, ["varies", "constant"])
+    assert result == ["varies"]

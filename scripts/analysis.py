@@ -255,6 +255,24 @@ def find_events(
         return pd.DataFrame(), None, None
 
 
+def _select_variance_threshold_features(pre_data_for_model, potential_exog_vars, threshold=0.01):
+    """
+    Retorna o subconjunto de potential_exog_vars cuja variância no pré-período
+    excede `threshold`, ou [] se nenhuma exceder -- inclusive quando
+    VarianceThreshold.get_support() do sklearn levanta ValueError porque
+    literalmente nenhuma feature passa (ele levanta em vez de retornar uma
+    máscara vazia), caso que o fallback existente do caller (usar as
+    transformed_features cruas) já trata via `if not varianced_features`.
+    """
+    selector = VarianceThreshold(threshold=threshold)
+    try:
+        selector.fit(pre_data_for_model[potential_exog_vars])
+        support = selector.get_support()
+    except ValueError:
+        return []
+    return [var for i, var in enumerate(potential_exog_vars) if support[i]]
+
+
 def run_causal_impact_analysis(
     kpi_df,
     daily_investment_df,
@@ -412,13 +430,9 @@ def run_causal_impact_analysis(
         if found_covariates:
             potential_exog_vars.extend(found_covariates)
 
-        selector = VarianceThreshold(threshold=0.01)
-        selector.fit(pre_data_for_model[potential_exog_vars])
-        varianced_features = [
-            var
-            for i, var in enumerate(potential_exog_vars)
-            if selector.get_support()[i]
-        ]
+        varianced_features = _select_variance_threshold_features(
+            pre_data_for_model, potential_exog_vars
+        )
 
         if not varianced_features:
             selected_features = list(transformed_features.keys())
