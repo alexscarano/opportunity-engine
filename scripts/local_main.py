@@ -29,7 +29,11 @@ import recommendations
 import saturation_curve
 import elasticity_analysis as mmm_analysis
 
-from gemini_report import generate_html_report, generate_global_gemini_report
+from gemini_report import (
+    generate_html_report,
+    generate_global_gemini_report,
+    is_gemini_outage_error,
+)
 from presentation import (
     save_accuracy_plot,
     save_line_chart_plot,
@@ -56,6 +60,11 @@ def main(config, args):
     gemini_client = google_api.authenticate_gemini(model_name=model_name)
 
     try:
+        # ponytail: uma vez visto 503/504/429 do Gemini neste run, assume outage e
+        # para de gastar o timeout de 300s por chamada em cada evento restante --
+        # ver is_gemini_outage_error em gemini_report.py.
+        gemini_outage_detected = False
+
         kpi_df, daily_investment_df, trends_df, correlation_matrix = (
             data_preprocessor.load_and_prepare_data(config)
         )
@@ -402,27 +411,35 @@ def main(config, args):
                                 log.info(
                                     "   - Generating Strategic Narrative with Gemini..."
                                 )
-                                try:
-                                    generate_html_report(
-                                        gemini_client,
-                                        results_data,
-                                        config,
-                                        image_paths,
-                                        html_report_filename,
-                                        market_analysis_df,
-                                        analyzed_event["line_df"],
-                                        csv_output_filename=csv_filename,
-                                        correlation_matrix=correlation_matrix,
+                                if gemini_outage_detected:
+                                    log.warning(
+                                        "   - AVISO: Gemini indisponível detectado neste run -- "
+                                        "pulando chamada de IA para este evento."
                                     )
-                                    successful_events.append(event_output_dir)
-                                    log.info(
-                                        f"   SUCCESS! View the Gemini HTML report here: {html_report_filename}"
-                                    )
-                                except Exception as e:
-                                    log.error(
-                                        f"   - ERROR: Could not generate or parse the narrative from Gemini. Details: {e}",
-                                        exc_info=True,
-                                    )
+                                else:
+                                    try:
+                                        generate_html_report(
+                                            gemini_client,
+                                            results_data,
+                                            config,
+                                            image_paths,
+                                            html_report_filename,
+                                            market_analysis_df,
+                                            analyzed_event["line_df"],
+                                            csv_output_filename=csv_filename,
+                                            correlation_matrix=correlation_matrix,
+                                        )
+                                        successful_events.append(event_output_dir)
+                                        log.info(
+                                            f"   SUCCESS! View the Gemini HTML report here: {html_report_filename}"
+                                        )
+                                    except Exception as e:
+                                        if is_gemini_outage_error(e):
+                                            gemini_outage_detected = True
+                                        log.error(
+                                            f"   - ERROR: Could not generate or parse the narrative from Gemini. Details: {e}",
+                                            exc_info=True,
+                                        )
 
                             except Exception as e:
                                 log.error(
@@ -632,20 +649,28 @@ def main(config, args):
 
             # --- Generate Global Gemini Report ---
             log.info("   - Generating Global Strategic Narrative with Gemini...")
-            try:
-                generate_global_gemini_report(
-                    gemini_client,
-                    config,
-                    scenarios,
-                    total_investment=total_monthly_investment,
-                    kpi_projections=kpi_projections,
+            if gemini_outage_detected:
+                log.warning(
+                    "   - AVISO: Gemini indisponível detectado neste run -- "
+                    "pulando a narrativa estratégica global."
                 )
-                log.info("   SUCCESS! Global strategic analysis complete.")
-            except Exception as e:
-                log.error(
-                    f"   - ERROR: Could not generate or parse the global narrative from Gemini. Details: {e}",
-                    exc_info=True,
-                )
+            else:
+                try:
+                    generate_global_gemini_report(
+                        gemini_client,
+                        config,
+                        scenarios,
+                        total_investment=total_monthly_investment,
+                        kpi_projections=kpi_projections,
+                    )
+                    log.info("   SUCCESS! Global strategic analysis complete.")
+                except Exception as e:
+                    if is_gemini_outage_error(e):
+                        gemini_outage_detected = True
+                    log.error(
+                        f"   - ERROR: Could not generate or parse the global narrative from Gemini. Details: {e}",
+                        exc_info=True,
+                    )
 
         else:
             log.error(

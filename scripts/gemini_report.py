@@ -19,9 +19,34 @@ log = logging.getLogger(__name__)
 # ponytail: sem isso o google-api-core faz retry com backoff exponencial em 503
 # ("model experiencing high demand") por até ~10 min POR chamada, sem imprimir
 # nada -- o painel de log da UI congela e parece travado. Com deadline total, a
-# falha cai no except abaixo e vira uma mensagem de erro visível.
-# Subir se algum prompt legitimamente demorar mais que isso.
-GEMINI_REQUEST_OPTIONS = {"timeout": 300}
+# falha cai no except abaixo e vira uma mensagem de erro visível. 60s (não 300s):
+# a 1ª chamada de cada run é quem paga esse teto integralmente antes do
+# is_gemini_outage_error() poder pular as demais -- ver local_main.py.
+# Subir se algum prompt legítimo (não-outage) estiver estourando esse teto.
+GEMINI_REQUEST_OPTIONS = {"timeout": 60}
+
+# ponytail: string match nas exceções em vez de importar os tipos do
+# google.api_core -- o SDK já stringifica esses erros com o código/nome
+# ("503 ... UNAVAILABLE", "504 Deadline Exceeded"), e o resto do módulo já
+# trata erro do Gemini como Exception genérica (ver RuntimeError acima).
+_OUTAGE_ERROR_MARKERS = (
+    "503",
+    "504",
+    "429",
+    "unavailable",
+    "deadline exceeded",
+    "resource exhausted",
+    "overloaded",
+)
+
+
+def is_gemini_outage_error(exc: Exception) -> bool:
+    """True se `exc` parece uma indisponibilidade transitória do Gemini (503/504/429),
+    não um problema de dado/validação. Usado pelo chamador (local_main.py) para parar
+    de gastar o orçamento de timeout por chamada em cada evento restante quando a API
+    já está claramente fora do ar neste run."""
+    text = str(exc).lower()
+    return any(marker in text for marker in _OUTAGE_ERROR_MARKERS)
 
 
 def _get_image_as_base64(path):

@@ -23,7 +23,7 @@ sys.path.append(
 
 # Now we can safely import _load_event_narrative
 from streamlit_app import _load_event_narrative
-from gemini_report import generate_global_gemini_report
+from gemini_report import generate_global_gemini_report, is_gemini_outage_error
 
 import unittest
 import tempfile
@@ -240,6 +240,27 @@ class TestGlobalReportMonthlyExtrapolationFactor(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             html_out = self._run({}, tmp)
         self.assertIn("R$ 30.0k", html_out)
+
+
+class TestIsGeminiOutageError(unittest.TestCase):
+    def test_transient_errors_detected(self):
+        for msg in (
+            "503 Service Unavailable: model overloaded",
+            "504 Deadline Exceeded",
+            "429 Resource has been exhausted",
+            "503 UNAVAILABLE",
+        ):
+            with self.subTest(msg=msg):
+                self.assertTrue(is_gemini_outage_error(Exception(msg)))
+
+    def test_non_transient_errors_not_flagged(self):
+        for msg in (
+            "resposta da IA não é um JSON válido: Expecting value",
+            "coluna de KPI sugerida ('foo') não existe nas colunas do arquivo",
+            "400 Invalid API key",
+        ):
+            with self.subTest(msg=msg):
+                self.assertFalse(is_gemini_outage_error(Exception(msg)))
 
 
 class TestGlobalReportFailsLoudly(unittest.TestCase):
