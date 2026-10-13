@@ -4,14 +4,17 @@ This Python application automates a comprehensive marketing analytics workflow. 
 
 ## Features
 
-*   **Interactive Dashboard UI:** Run analyses seamlessly via a complete, interactive Streamlit frontend with a secure Google Login and visual file uploaders.
+*   **Interactive Dashboard UI:** Run analyses seamlessly via a complete, interactive Streamlit frontend with local user accounts (SQLite), per-user projects, and visual file uploaders.
+*   **Interactive Dashboards:** Plotly-based *Impacto Causal* and *Elasticidade* tabs (iCPA curve, revenue/ROI curve, channel mix evolution, saturation comparison, events overview).
+*   **AI-Assisted Setup:** A "Sugerir com IA" button uses Gemini to prefill KPI, monetary and objective fields, and causal-analysis thresholds are auto-suggested from the investment history.
+*   **Robust CSV Ingestion:** Detects data cadence (daily, weekly, monthly, irregular), prunes partial periods, parses dates per whole column, handles datetime-with-time values and BI export footer rows, and reports clear errors on column or cadence mismatches.
 *   **Configuration Driven:** All parameters and file paths can also be managed in central `config.json` files for CLI execution.
 *   **Automated Event Detection:** Scans investment data to automatically find and validate periods of significant budget changes.
 *   **Causal Impact Analysis:** Uses `statsmodels` to build a time-series model that isolates the incremental impact of past marketing campaigns.
 *   **Global Elasticity Analysis:** After analyzing individual events, the script runs a holistic analysis on the entire dataset to model long-term channel contributions and diminishing returns.
 *   **Dynamic Financial Guardrails:** Strictly bounds investment recommendations based on real-world business constraints like Target CPA and Target ROAS.
 *   **Automated Reporting:** Generates detailed HTML reports with strategic narratives powered by the Gemini API, alongside clean offline CSV and Markdown fallbacks.
-*   **Usage Tracking:** Automatically logs execution statistics to stdout for organizational tracking.
+*   **Structured Logging:** A `logging`-based setup (`logger.py`) shows pt-BR messages in the UI and writes full technical logs to `data/log/`.
 
 ---
 ## How the Analysis Works
@@ -22,7 +25,7 @@ The script is a powerful engine that runs a complete analysis in two distinct st
 
 1.  **Event Detection:** The script first analyzes the `investment-data.csv` file to find significant changes in spending, flagging any period where investment changed beyond the thresholds defined in your config file.
 
-2.  **Causal Impact Modeling:** For each significant event, a causal impact analysis is performed. This model forecasts what your business results *would have been* without the investment change. The difference between the actual results and this forecast is the **incremental lift**, proving the true impact of your campaign.
+2.  **Causal Impact Modeling:** For each significant event, a causal impact analysis is performed. This model forecasts what your business results *would have been* without the investment change. The difference between the actual results and this forecast is the **incremental lift**, proving the true impact of your campaign. Significance is measured from the state-space model's own uncertainty, and each event must pass the validation gates set in the config (`min_pre_period_days`, `require_statistical_significance`, `require_logical_direction`, `require_model_fit` with `r_squared_threshold`).
 
 3.  **Event-Level Reporting:** For each event that passes statistical validation, the script generates a detailed report, including a saturation curve for that specific channel mix.
 
@@ -45,8 +48,8 @@ This project is designed to be adaptable. For detailed instructions on how to ma
 ## Getting Started
 
 ### 1. Prerequisites
-- Python 3.10+
-- `venv` for virtual environment management
+- Python 3.13+
+- [`uv`](https://docs.astral.sh/uv/)
 
 ### 2. Installation
 
@@ -56,15 +59,9 @@ git clone <your-repository-url>
 cd <your-repository-name>
 ```
 
-**b. Create and activate a virtual environment:**
+**b. Install the dependencies:**
 ```bash
-python3 -m venv venv
-source venv/bin/activate
-```
-
-**c. Install the required dependencies:**
-```bash
-pip install -r requirements.txt
+uv sync
 ```
 
 ### 3. Running the Streamlit UI Dashboard (Recommended)
@@ -72,17 +69,16 @@ pip install -r requirements.txt
 The easiest and most interactive way to run the Max Impact Engine (Total Opportunity) is via its built-in dashboard.
 
 ```bash
-# Verify your virtual environment is active, then launch Streamlit
-streamlit run scripts/streamlit_app.py
+uv run streamlit run scripts/streamlit_app.py
 ```
 
 This will open a browser window at `http://localhost:8501`. 
-1. Log in with your `@google.com` email address.
-2. Navigate to the **Setup (Nova Otimização)** tab.
-3. Upload your CSV files (`investment`, `performance`, and optionally `trends`).
-4. Set your KPI boundaries and click **"Construir Motor"**.
+1. Log in, or create an account with **"Cadastrar Novo Usuário"** (users, sessions and projects are stored in `data/database.db`).
+2. Navigate to the **Setup & Execução** tab and enter your Gemini API key (saved per user) or set `GEMINI_API_KEY` in `.env`.
+3. Upload your CSV files (`investment`, `performance`, and optionally `trends`). Investment and performance files must share the same cadence.
+4. Optionally click **"Sugerir com IA"** to prefill the form, then click **"Construir Motor de Oportunidades"**.
 
-The application will dynamically generate your configuration, run the engines, and print logs directly to your UI!
+The application will dynamically generate your configuration, run the engines, and print logs directly to your UI. If a run fails, the real error message is shown in the panel.
 
 ### 4. Running via the Command Line (CLI)
 
@@ -96,9 +92,24 @@ GEMINI_API_KEY="your_api_key_here"
 
 **b. Run the Main Script:**
 ```bash
-python3 scripts/local_main.py --config inputs/your_project/my_config.json
+uv run python scripts/local_main.py --config inputs/your_project/my_config.json
 ```
-*Note: If you do not have a Gemini API key or want to run entirely offline, use `python3 scripts/local_main-without-gemini.py ...` instead. It will generate `RECOMMENDATIONS.md` instead of HTML.*
+*Note: If you do not have a Gemini API key or want to run entirely offline, use `uv run python scripts/local_main-without-gemini.py ...` instead. It will generate `RECOMMENDATIONS.md` instead of HTML.*
+
+### 5. Running with Docker
+
+```bash
+docker build -t opportunity-engine .
+docker run -p 8501:8501 --env-file .env   -v "$PWD/data:/app/data" -v "$PWD/inputs:/app/inputs" -v "$PWD/outputs:/app/outputs"   opportunity-engine
+```
+
+The image runs Streamlit as a non-root user with a health check on `/_stcore/health`. Mount `data/`, `inputs/` and `outputs/` to persist the database, logs and reports.
+
+### 6. Running the Tests
+
+```bash
+uv run --with pytest pytest
+```
 
 ---
 
@@ -126,3 +137,8 @@ For each individual marketing event that passes isolation and causal validation,
     - `gemini_report_... .html`: A detailed HTML report for that specific event.
     - `RECOMMENDATIONS.md` and `SATURATION_CURVE.md`: Markdown files with the event-specific analysis.
     - Various `causal_impact...png` chart files.
+
+### 3. Logs
+
+- **Location:** `data/log/`
+- `<namespace>.log` holds the full technical record (DEBUG+, with tracebacks); `<namespace>.errors.log` keeps only warnings and errors for quick triage.
