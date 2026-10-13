@@ -10,6 +10,18 @@ This object is divided into three sections: `investment_file`, `performance_file
 
 **Note on Date Columns:** Regardless of the original column names you specify for `date_col` in each section, the script will automatically standardize them into a single column named `Date` after loading the data. This ensures internal consistency during the analysis.
 
+**Column Resolution:** Column names are matched exactly first, then ignoring case and surrounding whitespace, and finally against common names (only when a single candidate matches). If nothing resolves, the run stops with an error naming the missing column.
+
+**Date Parsing & Cadence:** Each date column is parsed with one format for the whole column (trailing times such as `00:00:00` are stripped, and BI export footer rows are dropped). If parsing is ambiguous, set the format explicitly in `date_formats`:
+```json
+"date_formats": {
+  "investment_file": "%Y-%m-%d",
+  "performance_file": "%d/%m/%Y",
+  "generic_trends_file": "%Y-%m-%d"
+}
+```
+The engine then detects the data cadence (daily, weekly, monthly) and drops partial periods at the edges. The investment and performance files **must share the same cadence**, otherwise the run stops with an error.
+
 ### a. Investment Data
 
 In the `investment_file` section of the `column_mapping`, you can specify the names for the date, channel, and investment columns.
@@ -91,6 +103,10 @@ The analysis can be tailored to optimize for two different primary business goal
     -   The analysis will focus on metrics like CPA (Cost Per Acquisition) and iCPA (Incremental Cost Per Acquisition).
     -   The `"average_ticket"` parameter will be ignored.
 
+-   `"kpi_is_monetary": true`
+    -   Use this when your KPI is already a monetary value (e.g., revenue in R$). Revenue is taken directly from the KPI, so `average_ticket` and `conversion_rate_from_kpi_to_bo` are ignored.
+    -   This forces revenue/ROAS mode: if combined with `"CONVERSIONS"`, the target is ignored and a warning is logged.
+
 **Example:**
 ```json
 {
@@ -116,6 +132,14 @@ To cap this exploration dynamically, you can add the optional `investment_limit_
 **How it Works:**
 -   If your highest daily spend was $10,000 and you set `"investment_limit_factor": 1.5`, the saturation engines will only compute the response curves up to $15,000 per day.
 -   If you omit this parameter, it will default to `2.0` (200%).
+-   In the Streamlit UI, this value is auto-suggested from your investment history.
+
+For the global channel-mix optimization, two extra optional limits apply:
+
+-   `per_channel_investment_limit_factor` (default `3.0`): caps each channel's recommended spend at this multiple of its historical maximum.
+-   `max_channel_mix_share` (default `0.4`): the maximum share of the total budget any single channel can receive in the optimized mix.
+
+**Note:** When the global model has no out-of-sample predictive power, the engine does not recommend reallocating budget between channels and keeps the historical mix.
 
 **Example:**
 ```json
@@ -179,4 +203,35 @@ You can control this behavior using the `treat_outliers` parameter in your `conf
 }
 ```
 
+## 6. Event Detection & Causal Validation
 
+These parameters control which investment changes become events and which events are considered validated.
+
+*   **`increase_threshold_percent`** / **`decrease_threshold_percent`**: The minimum investment change (in %) that flags an event. Very low values produce noisy events and log a warning.
+*   **`post_event_days`**: The length of the post-event window analyzed.
+*   **`min_pre_period_days`** (default `14`): The minimum history required before an event. It is converted into periods using the detected cadence, with a floor of 8 periods.
+*   **`max_events_to_analyze`**: The maximum number of candidate events analyzed per run.
+
+An event is only validated when it passes every enabled gate:
+
+*   **`require_statistical_significance`** (default `true`): The p-value, derived from the model's own uncertainty, must be below `p_value_threshold`.
+*   **`require_logical_direction`** (default `true`): The lift must move in the same direction as the investment change.
+*   **`require_model_fit`** (default `true`): The model's R² must be at least `r_squared_threshold` (default `0.3`).
+
+In the Streamlit UI, `min_pre_period_days`, the increase/decrease thresholds and `investment_limit_factor` are auto-suggested from your investment history.
+
+**Example:**
+```json
+{
+  "p_value_threshold": 0.1,
+  "r_squared_threshold": 0.3,
+  "min_pre_period_days": 14,
+  "require_statistical_significance": true,
+  "require_logical_direction": true,
+  "require_model_fit": true,
+  "increase_threshold_percent": 50,
+  "decrease_threshold_percent": 30,
+  "post_event_days": 14,
+  "max_events_to_analyze": 5
+}
+```
