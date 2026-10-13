@@ -61,7 +61,7 @@ def main(config, args):
 
     try:
         # ponytail: uma vez visto 503/504/429 do Gemini neste run, assume outage e
-        # para de gastar o timeout de 300s por chamada em cada evento restante --
+        # para de gastar o timeout de 60s por chamada em cada evento restante --
         # ver is_gemini_outage_error em gemini_report.py.
         gemini_outage_detected = False
 
