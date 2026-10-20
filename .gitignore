@@ -48,3 +48,6 @@ backup/
 #inputs/
 
 .serena/
+
+# Client documents (confidential)
+*.docx
