@@ -9,6 +9,8 @@ The Max Impact Engine is a Python-based marketing analytics platform. It automat
 1. **Stage 1 (Event-Level Causal Analysis):** Detects significant investment changes (`investment-data.csv`) and uses time-series modeling (`statsmodels`) to calculate incremental lift.
 2. **Stage 2 (Global Saturation/Elasticity Analysis):** Models long-term channel contributions and diminishing returns (saturation response curves) subject to business financial guardrails.
 
+**M2 platform migration (Oct–Nov 2026):** before writing a spec, plan or code for any `A*`/`B*` item, read `docs/m2/README.md` — it holds the decisions, the A↔B contract and the target architecture that supersede the Streamlit stack described below.
+
 ---
 
 ## 2. Technology Stack & Environment
