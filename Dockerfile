@@ -27,15 +27,15 @@ ENV HOME=/home/app \
     PATH=/app/.venv/bin:$PATH \
     STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 
-COPY --from=builder /app/.venv /app/.venv
-COPY logger.py .
-COPY api/ ./api/
-COPY scripts/ ./scripts/
-COPY Logos/ ./Logos/
-COPY --from=web /web/dist ./web/dist
+COPY --chown=app:app --from=builder /app/.venv /app/.venv
+COPY --chown=app:app logger.py .
+COPY --chown=app:app api/ ./api/
+COPY --chown=app:app scripts/ ./scripts/
+COPY --chown=app:app Logos/ ./Logos/
+COPY --chown=app:app --from=web /web/dist ./web/dist
 
 # runtime-only data for streamlit, mount as volumes (see .gitignore)
-RUN mkdir -p data/log inputs outputs && chown -R app:app /app
+RUN mkdir -p data/log inputs outputs && chown app:app /app data data/log inputs outputs
 
 USER app
 EXPOSE 8080
