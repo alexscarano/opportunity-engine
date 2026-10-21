@@ -51,3 +51,7 @@ backup/
 
 # Client documents (confidential)
 *.docx
+
+# Front
+web/node_modules/
+web/dist/
