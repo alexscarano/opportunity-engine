@@ -1,6 +1,7 @@
 [tools]
 python = "3.13"
 uv = "latest"
+node = "22"
 
 [env]
 _.python.venv = { path = ".venv", create = true, uv_create_args = ["--seed"] }
@@ -12,3 +13,20 @@ run = "uv run pytest"
 [tasks.dev]
 description = "Development Streamlit"
 run = "streamlit run scripts/streamlit_app.py"
+
+[tasks.api]
+description = "FastAPI with hot reload on :8000"
+run = "uv run uvicorn api.main:app --reload --port 8000"
+
+[tasks.web]
+description = "Vite dev server (proxies /api to :8000)"
+dir = "web"
+run = "bun run dev"
+
+[tasks.worker]
+description = "Run the job worker once"
+run = "uv run python -m api.worker"
+
+[tasks.db-migrate]
+description = "Apply Alembic migrations"
+run = "uv run alembic -c api/alembic.ini upgrade head"
