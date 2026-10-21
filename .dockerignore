@@ -20,3 +20,5 @@ exemplo_csv/
 .env
 *.md
 !README.md
+web/node_modules/
+web/dist/
