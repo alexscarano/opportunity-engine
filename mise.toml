@@ -7,7 +7,7 @@ _.python.venv = { path = ".venv", create = true, uv_create_args = ["--seed"] }
 
 [tasks.test]
 description = "Run tests"
-run = "uv run --with pytest pytest"
+run = "uv run pytest"
 
 [tasks.dev]
 description = "Development Streamlit"
